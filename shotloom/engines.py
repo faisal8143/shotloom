@@ -98,6 +98,15 @@ class PreviewEngine(BaseEngine):
 
 # --------------------------------------------------------------------------- wan
 class WanEngine(BaseEngine):
+    """Wan 2.2 TI2V-5B. Memory plan (fits 16 GB cards):
+
+    dual   (2+ GPUs, e.g. Kaggle T4 x2): video model on GPU 0, decoder (VAE) on GPU 1,
+           text encoder parked in RAM and moved to GPU 1 only to encode new prompts.
+    single (1 GPU, 16-24 GB): text encoder and video model take turns on the GPU,
+           and the video model steps aside while the VAE decodes.
+    big    (40 GB+): everything stays on one GPU.
+    Prompts are encoded once and cached, so swaps only happen for new prompts.
+    """
     name = "Wan 2.2 TI2V-5B"
     kind = "wan"
 
@@ -105,7 +114,7 @@ class WanEngine(BaseEngine):
         super().__init__()
         self.model_id = model_id or os.environ.get("SHOTLOOM_MODEL", "Wan-AI/Wan2.2-TI2V-5B-Diffusers")
         self.ready = False
-        self.status = "not loaded (loads on first generate, ~2-5 min)"
+        self.status = "not loaded (loads on first generate, ~5-10 min the first time)"
         self._embeds = {}
 
     # ------------------------------------------------------------ load
@@ -137,22 +146,22 @@ class WanEngine(BaseEngine):
             self.dtype = torch.bfloat16 if major >= 8 else torch.float16
         self.dev = torch.device("cuda:0")
         if n >= 2:
-            self.te_mode, self.te_dev = "gpu1", torch.device("cuda:1")
+            self.mode, self.vae_dev, self.te_work = "dual", torch.device("cuda:1"), torch.device("cuda:1")
         elif vram >= 40:
-            self.te_mode, self.te_dev = "gpu0", self.dev
+            self.mode, self.vae_dev, self.te_work = "big", self.dev, self.dev
         else:
-            self.te_mode, self.te_dev = "swap", self.dev
+            self.mode, self.vae_dev, self.te_work = "single", self.dev, self.dev
         log(f"GPUs: {n} x {torch.cuda.get_device_name(0)} ({vram:.0f} GB), "
-            f"transformer {str(self.dtype).split('.')[-1]}, text encoder: {self.te_mode}")
+            f"video model {str(self.dtype).split('.')[-1]}, memory plan: {self.mode}")
 
-        log("downloading / loading text encoder (umt5-xxl, ~11 GB)...")
+        log("loading text encoder (umt5-xxl, ~11 GB; first run downloads it)...")
         self.text_encoder = UMT5EncoderModel.from_pretrained(
             self.model_id, subfolder="text_encoder", torch_dtype=torch.bfloat16)
         self.text_encoder.eval()
-        if self.te_mode != "swap":
-            self.text_encoder.to(self.te_dev)
+        if self.mode == "big":
+            self.text_encoder.to(self.dev)
 
-        log("loading VAE + transformer (5B)...")
+        log("loading VAE + video model (5B)...")
         vae = AutoencoderKLWan.from_pretrained(self.model_id, subfolder="vae", torch_dtype=torch.float32)
         self.i2v = WanImageToVideoPipeline.from_pretrained(
             self.model_id, vae=vae, text_encoder=None, torch_dtype=self.dtype)
@@ -162,11 +171,16 @@ class WanEngine(BaseEngine):
                                expand_timesteps=True)
         self.i2v.vae.enable_tiling()
         self.i2v.transformer.to(self.dev)
-        self.i2v.vae.to(self.dev)
-        for p in (self.i2v, self.t2v):
-            p.set_progress_bar_config(disable=True)
+        self.i2v.vae.to(self.vae_dev)
+        for pipe in (self.i2v, self.t2v):
+            pipe.set_progress_bar_config(disable=True)
+            # latents must live with the video model even when the VAE sits on another GPU
+            base = type(pipe)
+            dev = self.dev
+            pipe.__class__ = type(base.__name__, (base,),
+                                  {"_execution_device": property(lambda self, d=dev: d)})
         self.ready = True
-        self.status = f"ready on {torch.cuda.get_device_name(0)} x{n}"
+        self.status = f"ready on {torch.cuda.get_device_name(0)} x{n} ({self.mode})"
         log(f"model ready in {time.time() - t0:.0f}s")
 
     # ------------------------------------------------------------ prompts
@@ -187,33 +201,47 @@ class WanEngine(BaseEngine):
         return out
 
     def encode_many(self, prompts, negative, log=print):
-        """Encode every prompt not yet cached. In swap mode the transformer
-        leaves the GPU once for the whole batch, not once per shot."""
+        """Encode every prompt not yet cached, moving the text encoder onto a GPU
+        once for the whole batch."""
         import torch
         todo = [p for p in dict.fromkeys(list(prompts) + [negative]) if p not in self._embeds]
         if not todo:
             return
-        swap = self.te_mode == "swap"
-        if swap:
-            log(f"encoding {len(todo)} prompt(s) - swapping text encoder onto the GPU")
-            self.i2v.transformer.to("cpu"); torch.cuda.empty_cache()
-            self.text_encoder.to(self.dev)
+        moved = False
+        if self.mode in ("dual", "single"):
+            log(f"encoding {len(todo)} prompt(s)")
+            if self.mode == "single":
+                self.i2v.transformer.to("cpu"); gc.collect(); torch.cuda.empty_cache()
+            self.text_encoder.to(self.te_work)
+            moved = True
         try:
             for i in range(0, len(todo), 4):
                 chunk = todo[i:i + 4]
                 try:
                     embeds = self._encode(chunk)
-                except RuntimeError as err:   # e.g. no bf16 kernel on this GPU
-                    log(f"GPU text encoding failed ({err.__class__.__name__}); encoding on CPU instead")
-                    self.text_encoder.to("cpu"); torch.cuda.empty_cache()
-                    self.te_mode = "cpu"
+                except RuntimeError as err:   # e.g. no bf16 kernel / no room on this GPU
+                    log(f"GPU text encoding failed ({str(err)[:80]}); encoding on CPU instead")
+                    self.text_encoder.to("cpu"); gc.collect(); torch.cuda.empty_cache()
                     embeds = self._encode(chunk)
                 for t, e in zip(chunk, embeds):
                     self._embeds[t] = e
         finally:
-            if swap:
+            if moved:
                 self.text_encoder.to("cpu"); gc.collect(); torch.cuda.empty_cache()
-                self.i2v.transformer.to(self.dev)
+                if self.mode == "single":
+                    self.i2v.transformer.to(self.dev)
+
+    # ------------------------------------------------------------ decode
+    def _decode(self, latents):
+        import torch
+        vae = self.i2v.vae
+        lat = latents.to(self.vae_dev, vae.dtype)
+        mean = torch.tensor(vae.config.latents_mean).view(1, vae.config.z_dim, 1, 1, 1).to(lat.device, lat.dtype)
+        inv_std = 1.0 / torch.tensor(vae.config.latents_std).view(1, vae.config.z_dim, 1, 1, 1).to(lat.device, lat.dtype)
+        lat = lat / inv_std + mean
+        with torch.no_grad():
+            vid = vae.decode(lat, return_dict=False)[0]
+        return self.i2v.video_processor.postprocess_video(vid, output_type="np")[0]
 
     # ------------------------------------------------------------ generate
     def generate(self, *, prompt, image_path, seconds, aspect, quality, seed, out,
@@ -229,43 +257,49 @@ class WanEngine(BaseEngine):
                 nf = ((nf - 1) // 4 + 1) * 4 + 1
             seed = int(seed) if seed is not None and int(seed) >= 0 else random.randint(0, 2**31 - 1)
             self.encode_many([prompt], negative, log)
-            pe = self._embeds[prompt].to(self.dev)
-            ne = self._embeds[negative].to(self.dev)
-            kw = dict(prompt_embeds=pe, negative_prompt_embeds=ne, height=h, width=w,
-                      num_frames=nf, num_inference_steps=steps, guidance_scale=5.0,
-                      output_type="np")
             mode = "frames-to-video" if image_path else "text-to-video"
             log(f"{mode} {w}x{h} {seconds}s ({nf} frames) {steps} steps seed {seed}")
             t0 = time.time()
             for attempt in (1, 2):
+                kw = dict(prompt_embeds=self._embeds[prompt].to(self.dev),
+                          negative_prompt_embeds=self._embeds[negative].to(self.dev),
+                          height=h, width=w, num_frames=nf, num_inference_steps=steps,
+                          guidance_scale=5.0, output_type="latent")
                 gen = torch.Generator("cpu").manual_seed(seed)
+                stage = "denoising"
                 try:
                     if image_path:
                         img = video.cover_fit(Image.open(image_path).convert("RGB"), w, h)
-                        frames = self.i2v(image=img, generator=gen, **kw).frames[0]
+                        latents = self.i2v(image=img, generator=gen, **kw).frames
                     else:
-                        frames = self.t2v(generator=gen, **kw).frames[0]
+                        latents = self.t2v(generator=gen, **kw).frames
+                    stage = "decoding"
+                    if self.mode == "single":           # make room for the VAE
+                        self.i2v.transformer.to("cpu"); gc.collect(); torch.cuda.empty_cache()
+                    try:
+                        frames = np.asarray(self._decode(latents))
+                    finally:
+                        del latents
+                        if self.mode == "single":
+                            self.i2v.transformer.to(self.dev)
                 except torch.cuda.OutOfMemoryError:
                     gc.collect(); torch.cuda.empty_cache()
-                    raise RuntimeError(f"out of GPU memory at {quality} / {seconds:g}s - "
-                                       "use draft quality or a shorter clip on this GPU")
-                frames = np.asarray(frames)
+                    raise RuntimeError(f"out of GPU memory while {stage} ({quality}, {seconds:g}s) - "
+                                       "try draft quality or a shorter clip on this GPU")
                 if np.isfinite(frames).all() and frames.max() > 0.02:
                     break
                 if attempt == 1 and self.dtype == torch.float16:
-                    log("fp16 overflow (black/NaN frames) - switching transformer to bf16 and retrying")
+                    log("fp16 overflow (black/NaN frames) - switching video model to bf16 and retrying")
                     self.dtype = torch.bfloat16
                     self.i2v.transformer.to(torch.bfloat16)
                     self._embeds = {k: v.to(torch.bfloat16) for k, v in self._embeds.items()}
-                    kw["prompt_embeds"] = self._embeds[prompt].to(self.dev)
-                    kw["negative_prompt_embeds"] = self._embeds[negative].to(self.dev)
                     continue
                 raise RuntimeError("model returned empty frames - try SHOTLOOM_DTYPE=bf16")
             W, H = video.ASPECTS[aspect]
             video.write_frames(frames, out, W, H, seconds)
             log(f"done in {time.time() - t0:.0f}s -> {os.path.basename(out)}")
             del frames
-            torch.cuda.empty_cache()
+            gc.collect(); torch.cuda.empty_cache()
             return out, seed
 
 
