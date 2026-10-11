@@ -1,0 +1,13 @@
+# core (studio, stills, scenebuilder) - works on any PC, no GPU
+gradio>=5.0
+numpy
+pillow
+imageio-ffmpeg
+ftfy
+
+# AI video engine (NVIDIA GPU). Install PyTorch with CUDA first: https://pytorch.org
+diffusers>=0.35.0
+transformers>=4.50
+accelerate
+sentencepiece
+safetensors

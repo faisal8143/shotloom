@@ -1,0 +1,7 @@
+shot_id,seconds,type,image,motion_prompt,camera_move,notes
+S001,6,HERO,S001.png,"A man in a deep crimson coat walks slowly across a rain-soaked London street at night, coat moving in the wind, headlights sliding past behind him; slow tracking shot following him from the side",,cold open
+S002,4,STILL,S002.png,,push_in,
+S003,4,STILL,S003.png,,pan_right,
+S004,8,HERO,S004.png,"Papers scatter off a polished boardroom table as a window bursts open, executives in dark suits turn sharply toward the noise; slow push in",,act one turn
+S005,6,STILL,S005.png,,,camera_move left blank = automatic
+S006,4,STILL,S006.png,,tilt_up,
