@@ -113,7 +113,13 @@ class WanEngine(BaseEngine):
         if self.ready:
             return
         import torch
-        from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanPipeline
+        try:
+            from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanPipeline
+        except (ImportError, RuntimeError) as e:
+            if "torchao" in str(e):
+                raise RuntimeError("an old 'torchao' package clashes with diffusers - run "
+                                   "`pip uninstall -y torchao`, then restart Shotloom") from e
+            raise
         from transformers import UMT5EncoderModel
 
         if not torch.cuda.is_available():
