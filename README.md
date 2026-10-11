@@ -38,7 +38,7 @@ Powered by [Wan 2.2 TI2V-5B](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B-Diffus
 
 ### B. Your own NVIDIA GPU (16 GB+ VRAM, 32 GB RAM)
 ```bash
-git clone https://github.com/YOUR-GITHUB-USERNAME/shotloom.git
+git clone https://github.com/faisal8143/shotloom.git
 cd shotloom
 pip install torch --index-url https://download.pytorch.org/whl/cu124   # pick your CUDA build
 pip install -r requirements.txt
