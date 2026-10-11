@@ -42,6 +42,8 @@ def take_label(i, t):
 
 # ------------------------------------------------------------------ project
 def open_project(name):
+    if not name:                      # fresh install / no project picked yet
+        return (gr.skip(),) * 8
     p = P(name)
     ids = shot_choices(p)
     first = ids[0] if ids else None
