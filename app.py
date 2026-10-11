@@ -179,6 +179,14 @@ def _apply_edits(p, s, frame, prompt, camera, seconds, size="auto", lens="auto",
     p.save()
 
 
+def _tee(logs):
+    """Log to the UI and to the server console (the Kaggle cell shows it live)."""
+    def log(msg):
+        logs.append(msg)
+        print(msg, flush=True)
+    return log
+
+
 def do_generate(name, sid, frame, prompt, camera, seconds, quality, seed, steps, size, lens, light,
                 kind, progress):
     p = P(name)
@@ -193,10 +201,10 @@ def do_generate(name, sid, frame, prompt, camera, seconds, quality, seed, steps,
                 gr.Warning("No GPU engine - making a preview (camera move) instead")
             progress(0, desc="loading model / encoding prompt...")
             studio.generate_ai(p, ENGINE, s, quality=quality, seed=int(seed),
-                               steps=int(steps) or None, log=logs.append,
+                               steps=int(steps) or None, log=_tee(logs),
                                progress=lambda i, n: progress(i / n, desc=f"step {i}/{n}"))
         else:
-            studio.animate_still(p, s, seed=None, log=logs.append)
+            studio.animate_still(p, s, seed=None, log=_tee(logs))
     except Exception as e:
         raise gr.Error(str(e))
     view = gen_view(name, sid)
@@ -281,7 +289,7 @@ def do_build(name, audio, finish):
     p = P(name)
     logs = []
     try:
-        out = studio.build(p, audio=audio or None, log=logs.append, finish=bool(finish))
+        out = studio.build(p, audio=audio or None, log=_tee(logs), finish=bool(finish))
     except Exception as e:
         raise gr.Error(str(e))
     return out, out, "\n".join(logs), scene_rows(p)
