@@ -40,17 +40,22 @@ def frames_for(seconds: float, fps: int = FPS) -> int:
 
 # ------------------------------------------------------------------ encoding
 class FrameWriter:
-    """Pipe RGB frames of size (src_w, src_h) into an H.264 file of exactly
-    `n` frames at (W, H), cover-scaled with lanczos."""
+    """Pipe RGB frames of size (src_w, src_h) into an H.264 file of exactly `n`
+    frames at (W, H) and `fps`, cover-scaled with lanczos. When the source runs
+    at a different rate (Wan A14B makes 16 fps) the motion is interpolated to
+    `fps`, and the last frame is held if the source is slightly short."""
 
-    def __init__(self, out, src_w, src_h, W, H, n, fps=FPS):
+    def __init__(self, out, src_w, src_h, W, H, n, fps=FPS, src_fps=None):
         self.out, self.n, self.tmp = out, n, out + ".part.mp4"
-        vf = []
+        src_fps = src_fps or fps
+        filters = []
+        if src_fps != fps:
+            filters.append(f"minterpolate=fps={fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1")
         if (src_w, src_h) != (W, H):
-            vf = ["-vf", f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
-                         f"crop={W}:{H},setsar=1"]
+            filters.append(f"scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H}")
+        filters += ["setsar=1", "tpad=stop_mode=clone:stop_duration=2"]
         cmd = [ffmpeg(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-               "-s", f"{src_w}x{src_h}", "-r", str(fps), "-i", "-", *vf,
+               "-s", f"{src_w}x{src_h}", "-r", str(src_fps), "-i", "-", "-vf", ",".join(filters),
                "-frames:v", str(n), *ENCODE, "-r", str(fps), self.tmp]
         os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
         self.p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
@@ -66,18 +71,23 @@ class FrameWriter:
         return self.out
 
 
-def write_frames(frames, out, W, H, seconds, fps=FPS):
-    """frames: sequence of HxWx3 arrays (float 0..1 or uint8). Writes exactly
-    seconds*fps frames; repeats the last frame if the model returned too few."""
+def _u8(f):
+    f = np.asarray(f)
+    if f.dtype != np.uint8:
+        f = (np.clip(f, 0, 1) * 255 + 0.5).astype(np.uint8)
+    return f
+
+
+def write_frames(frames, out, W, H, seconds, fps=FPS, src_fps=None):
+    """frames: sequence of HxWx3 arrays (float 0..1 or uint8) at `src_fps`
+    (default: same as output). Writes exactly seconds*fps output frames."""
     n = frames_for(seconds, fps)
-    first = np.asarray(frames[0])
-    h, w = first.shape[:2]
-    wr = FrameWriter(out, w, h, W, H, n, fps)
-    for i in range(n):
-        f = np.asarray(frames[min(i, len(frames) - 1)])
-        if f.dtype != np.uint8:
-            f = (np.clip(f, 0, 1) * 255 + 0.5).astype(np.uint8)
-        wr.write(f)
+    src_fps = src_fps or fps
+    h, w = np.asarray(frames[0]).shape[:2]
+    wr = FrameWriter(out, w, h, W, H, n, fps, src_fps)
+    count = n if src_fps == fps else len(frames)   # same rate: exact; else feed all, ffmpeg trims
+    for i in range(count):
+        wr.write(_u8(frames[min(i, len(frames) - 1)]))
     return wr.close()
 
 
@@ -212,4 +222,62 @@ def assemble(clips, out, audio=None):
     cmd += ["-movflags", "+faststart", out]
     subprocess.run(cmd, check=True)
     os.remove(listing)
+    return out
+
+
+# ------------------------------------------------------------------ cinematic finish
+def grade_lut(grade: str) -> str:
+    """Bake a colour-grade filter chain into a 64^3 .cube LUT (once, cached).
+    Applying one LUT is several times faster than running the chain per frame."""
+    import hashlib
+    cache = os.path.join(os.path.expanduser("~"), ".cache", "shotloom", "luts")
+    os.makedirs(cache, exist_ok=True)
+    path = os.path.join(cache, hashlib.sha1(grade.encode()).hexdigest()[:16] + ".cube")
+    if os.path.exists(path):
+        return path
+    png = path + ".png"
+    subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "haldclutsrc=level=8",
+                    "-vf", grade + ",format=rgb24", "-frames:v", "1", png], check=True)
+    hald = np.asarray(Image.open(png).convert("RGB"), dtype=np.float32).reshape(-1, 3) / 255.0
+    size = 64                                   # level 8 -> 8^2 = 64 entries per channel
+    tmp = path + ".part"
+    with open(tmp, "w") as f:
+        f.write(f"LUT_3D_SIZE {size}\n")
+        # hald order is red fastest, then green, then blue - the same order .cube uses
+        f.writelines(f"{r:.6f} {g:.6f} {b:.6f}\n" for r, g, b in hald[: size ** 3])
+    os.replace(tmp, path)
+    os.remove(png)
+    return path
+
+
+def finish_filters(grade: str = "", letterbox: bool = False, grain: float = 0.0,
+                   aspect: str = "16:9", vignette: bool = True) -> str:
+    """ffmpeg filter chain for the film finish: grade (as a 3D LUT) -> sharpen ->
+    vignette -> temporal grain -> 2.39:1 letterbox (16:9 only)."""
+    W, H = ASPECTS[aspect]
+    chain = []
+    if grade:
+        chain.append(f"lut3d=file='{grade_lut(grade)}':interp=tetrahedral")
+    chain.append("unsharp=5:5:0.45:5:5:0.0")
+    if vignette:
+        chain.append("vignette=angle=PI/6")
+    g = max(0.0, min(1.0, float(grain or 0)))
+    if g > 0:
+        chain.append(f"noise=c0s={int(round(4 + 14 * g))}:c0f=t+u")
+    if letterbox and W > H:
+        bar = int(round((H - W / 2.39) / 2))
+        chain.append(f"drawbox=x=0:y=0:w=iw:h={bar}:color=black:t=fill,"
+                     f"drawbox=x=0:y=ih-{bar}:w=iw:h={bar}:color=black:t=fill")
+    chain.append("format=yuv420p")
+    return ",".join(chain)
+
+
+def finish(src: str, out: str, vf: str) -> str:
+    """Re-encode `src` through the finish chain, keeping its audio untouched."""
+    tmp = out + ".part.mp4"
+    enc = ["-c:v", "libx264", "-preset", "fast", "-crf", "16", "-pix_fmt", "yuv420p",
+           "-movflags", "+faststart"]
+    subprocess.run([ffmpeg(), "-y", "-loglevel", "error", "-i", src, "-map", "0:v:0", "-map", "0:a?",
+                    "-vf", vf, *enc, "-c:a", "copy", tmp], check=True)
+    os.replace(tmp, out)
     return out

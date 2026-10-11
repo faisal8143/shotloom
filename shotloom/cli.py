@@ -34,7 +34,7 @@ def main(argv=None):
     ap.add_argument("--aspect", choices=["16:9", "9:16"], default=None)
     ap.add_argument("--style", default=None)
     ap.add_argument("--engine", default=os.environ.get("SHOTLOOM_ENGINE", "auto"),
-                    choices=["auto", "wan", "preview"])
+                    choices=["auto", "cinematic", "fast", "preview", "wan"])
     ap.add_argument("--quality", default="standard", choices=["draft", "standard", "final"])
     ap.add_argument("--no-ai", action="store_true")
     ap.add_argument("--no-stills", action="store_true")

@@ -13,8 +13,8 @@ import threading
 
 import gradio as gr
 
-from shotloom import studio, video
-from shotloom.engines import CAMERA_PROMPTS, DEFAULT_NEGATIVE, QUALITY, make_engine
+from shotloom import looks, studio, video
+from shotloom.engines import CAMERA_PROMPTS, DEFAULT_NEGATIVE, QUALITY_NAMES, build_prompt, make_engine
 from shotloom.project import SECONDS, Project, Shot, list_projects
 
 ROOT = os.path.abspath(os.environ.get("SHOTLOOM_HOME", "projects"))
@@ -22,6 +22,7 @@ ENGINE = None
 STOP = threading.Event()
 NEW = "+ new shot"
 CAMS = list(CAMERA_PROMPTS)
+SIZES, LENSES, LIGHTS, LOOKS = list(looks.SHOT_SIZES), list(looks.LENSES), list(looks.LIGHTING), list(looks.LOOKS)
 
 
 def P(name) -> Project:
@@ -43,14 +44,14 @@ def take_label(i, t):
 # ------------------------------------------------------------------ project
 def open_project(name):
     if not name:                      # fresh install / no project picked yet
-        return (gr.skip(),) * 8
+        return (gr.skip(),) * 11
     p = P(name)
     ids = shot_choices(p)
     first = ids[0] if ids else None
     return (p.table(), p.aspect, p.style, p.negative or DEFAULT_NEGATIVE,
             gr.Dropdown(choices=[NEW] + ids, value=NEW),
             gr.Dropdown(choices=ids, value=first),
-            status_line(p), scene_rows(p))
+            status_line(p), scene_rows(p), p.look, p.letterbox, p.grain)
 
 
 def create_project(new_name):
@@ -60,9 +61,10 @@ def create_project(new_name):
     return gr.Dropdown(choices=list_projects(ROOT), value=p.name), ""
 
 
-def save_settings(name, aspect, style, negative):
+def save_settings(name, aspect, style, negative, look, letterbox, grain):
     p = P(name)
     p.aspect, p.style = aspect, style or ""
+    p.look, p.letterbox, p.grain = look or "none", bool(letterbox), float(grain or 0)
     p.negative = "" if (negative or "").strip() == DEFAULT_NEGATIVE else (negative or "")
     p.save()
     return status_line(p)
@@ -71,9 +73,14 @@ def save_settings(name, aspect, style, negative):
 def status_line(p: Project):
     ai = sum(1 for s in p.shots if s.mode == "AI")
     done = sum(1 for s in p.shots if s.takes)
+    need = ""
+    if getattr(ENGINE, "image_only", False):
+        nofr = sum(1 for s in p.shots if s.mode == "AI" and not s.frame)
+        if nofr:
+            need = f" - **{nofr} AI shot(s) need a first frame** for this engine"
     return (f"**{p.name}** - {len(p.shots)} shots ({ai} AI / {len(p.shots) - ai} still), "
-            f"{p.total_seconds():.0f}s of picture, {done} with takes - aspect {p.aspect} - "
-            f"engine: {ENGINE.describe()}")
+            f"{p.total_seconds():.0f}s of picture, {done} with takes - {p.aspect}, look: {p.look} - "
+            f"engine: {ENGINE.describe()}{need}")
 
 
 # ------------------------------------------------------------------ shots tab
@@ -91,22 +98,24 @@ def import_csv(name, csv_file, images, replace):
 
 
 def load_shot(name, sid):
+    blank = ("", 6, "AI", "auto", "", "", None, "auto", "auto", "auto")
     if not name or not sid or sid == NEW:
-        return "", 6, "AI", "auto", "", "", None
+        return blank
     p = P(name)
     s = p.get(sid)
     if not s:
-        return "", 6, "AI", "auto", "", "", None
+        return blank
     return (s.id, int(s.seconds) if s.seconds in SECONDS else s.seconds, s.mode, s.camera,
-            s.prompt, s.notes, p.abs(s.frame) or None)
+            s.prompt, s.notes, p.abs(s.frame) or None, s.size, s.lens, s.light)
 
 
-def save_shot(name, sel, sid, seconds, mode, camera, prompt, notes, frame):
+def save_shot(name, sel, sid, seconds, mode, camera, prompt, notes, frame, size, lens, light):
     p = P(name)
     sid = (sid or "").strip() or (sel if sel and sel != NEW else p.next_id())
     old = p.get(sid)
     s = Shot(id=sid, seconds=float(seconds), mode=mode, prompt=prompt or "",
-             camera=camera or "auto", notes=notes or "",
+             camera=camera or "auto", notes=notes or "", size=size or "auto",
+             lens=lens or "auto", light=light or "auto",
              frame=old.frame if old else "")
     if frame and os.path.exists(frame) and os.path.abspath(frame) != os.path.abspath(p.abs(s.frame)):
         p.set_frame(s, frame)
@@ -135,21 +144,34 @@ def move_shot(name, sel, delta):
 # ------------------------------------------------------------------ generate tab
 def gen_view(name, sid):
     """Frame, prompt, takes for the Generate tab."""
+    empty = (None, "", "auto", 6, gr.Dropdown(choices=[], value=None), None, "auto", "auto", "auto")
     if not name or not sid:
-        return None, "", "auto", 6, gr.Dropdown(choices=[], value=None), None
+        return empty
     p = P(name)
     s = p.get(sid)
     if not s:
-        return None, "", "auto", 6, gr.Dropdown(choices=[], value=None), None
+        return empty
     labels = [take_label(i, t) for i, t in enumerate(s.takes)]
     t = s.chosen_take()
     cur = labels[s.takes.index(t)] if t else None
     return (p.abs(s.frame) or None, s.prompt, s.camera, s.seconds,
-            gr.Dropdown(choices=labels, value=cur), p.abs(t.file) if t else None)
+            gr.Dropdown(choices=labels, value=cur), p.abs(t.file) if t else None,
+            s.size, s.lens, s.light)
 
 
-def _apply_edits(p, s, frame, prompt, camera, seconds):
+def prompt_preview(name, prompt, camera, size, lens, light):
+    """The exact prompt the model will receive."""
+    if not name:
+        return ""
+    p = P(name)
+    shot = Shot(id="_", prompt=prompt or "", camera=camera, size=size, lens=lens, light=light)
+    text = build_prompt(shot.prompt, camera, p.style, shot=shot, look=p.look)
+    return f"**Prompt sent to the model:** {text}" if text else ""
+
+
+def _apply_edits(p, s, frame, prompt, camera, seconds, size="auto", lens="auto", light="auto"):
     s.prompt, s.camera, s.seconds = prompt or "", camera or "auto", float(seconds)
+    s.size, s.lens, s.light = size or "auto", lens or "auto", light or "auto"
     if frame and os.path.exists(frame) and os.path.abspath(frame) != os.path.abspath(p.abs(s.frame)):
         p.set_frame(s, frame)
     elif not frame:
@@ -157,25 +179,40 @@ def _apply_edits(p, s, frame, prompt, camera, seconds):
     p.save()
 
 
-def do_generate(name, sid, frame, prompt, camera, seconds, quality, seed, steps, kind):
+def do_generate(name, sid, frame, prompt, camera, seconds, quality, seed, steps, size, lens, light,
+                kind, progress):
     p = P(name)
     s = p.get(sid)
     if not s:
         raise gr.Error("Pick a shot (or add one in the Shots tab)")
-    _apply_edits(p, s, frame, prompt, camera, seconds)
+    _apply_edits(p, s, frame, prompt, camera, seconds, size, lens, light)
     logs = []
     try:
         if kind == "ai":
             if ENGINE.kind == "preview":
                 gr.Warning("No GPU engine - making a preview (camera move) instead")
+            progress(0, desc="loading model / encoding prompt...")
             studio.generate_ai(p, ENGINE, s, quality=quality, seed=int(seed),
-                               steps=int(steps) or None, log=logs.append)
+                               steps=int(steps) or None, log=logs.append,
+                               progress=lambda i, n: progress(i / n, desc=f"step {i}/{n}"))
         else:
             studio.animate_still(p, s, seed=None, log=logs.append)
     except Exception as e:
         raise gr.Error(str(e))
-    fr, pr, cam, sec, takes, vid = gen_view(name, sid)
-    return vid, takes, "\n".join(logs), p.table(), status_line(p), scene_rows(p)
+    view = gen_view(name, sid)
+    return view[5], view[4], "\n".join(logs), p.table(), status_line(p), scene_rows(p)
+
+
+def gen_ai(name, sid, frame, prompt, camera, seconds, quality, seed, steps, size, lens, light,
+           progress=gr.Progress()):
+    return do_generate(name, sid, frame, prompt, camera, seconds, quality, seed, steps,
+                       size, lens, light, "ai", progress)
+
+
+def gen_still(name, sid, frame, prompt, camera, seconds, quality, seed, steps, size, lens, light,
+              progress=gr.Progress()):
+    return do_generate(name, sid, frame, prompt, camera, seconds, quality, seed, steps,
+                       size, lens, light, "still", progress)
 
 
 def pick_take(name, sid, label):
@@ -240,11 +277,11 @@ def scene_rows(p: Project):
     return rows
 
 
-def do_build(name, audio):
+def do_build(name, audio, finish):
     p = P(name)
     logs = []
     try:
-        out = studio.build(p, audio=audio or None, log=logs.append)
+        out = studio.build(p, audio=audio or None, log=logs.append, finish=bool(finish))
     except Exception as e:
         raise gr.Error(str(e))
     return out, out, "\n".join(logs), scene_rows(p)
@@ -253,24 +290,34 @@ def do_build(name, audio):
 # ------------------------------------------------------------------ ui
 HELP = """
 ### How it works
-1. **Project** - create one per film. Pick 16:9 (YouTube) or 9:16 (Shorts / Reels). *Style* is added to every AI prompt.
-2. **Shots** - import your shot list CSV + images (columns: `shot_id, seconds, type, image, motion_prompt, camera_move, notes`;
-   type `HERO`/`AI` = AI video, `STILL` = camera move), or add shots by hand.
-3. **Generate** - per shot: **Generate video** (AI: text-to-video, or frames-to-video when the shot has a frame) or
-   **Animate still** (free, instant camera move). Make several takes, keep the best with **Use this take**.
-   **Extend** starts a new shot on the last frame of the current take.
+1. **Project** - one per film. Pick 16:9 (YouTube) or 9:16 (Shorts / Reels), a **look** (grade + style words),
+   letterbox and grain. *Style* is added to every AI prompt.
+2. **Shots** - import your shot list CSV + images (columns: `shot_id, seconds, type, image, motion_prompt,
+   camera_move, shot_size, lens, lighting, notes`; type `HERO`/`AI` = AI video, `STILL` = camera move), or add shots by hand.
+3. **Generate** - per shot: **Generate video** or **Animate still** (free, instant camera move). Set shot size, lens and
+   lighting like a cinematographer - the line under the prompt shows exactly what the model receives.
+   Make several takes, keep the best with **Use this take**. **Extend** starts a new shot on the last frame.
 4. **Batch** - render every shot unattended. Stop any time; Run again resumes.
-5. **Scenebuilder** - stitches the chosen takes in order, lays your narration under them and exports one MP4.
+5. **Scenebuilder** - chosen takes in order + narration, then the film finish (grade, grain, letterbox) -> one MP4.
 
-Every clip is exactly 4/6/8 s at 24 fps, 1080p, so cuts land on your measured act grid.
-Quality: **draft** 480p/20 steps (fast look-dev), **standard** 704p/30, **final** 704p/40. Output is upscaled to 1080p.
+### Engines
+- **Cinematic** - Wan 2.2 A14B + Lightning (Kaggle T4 x2 or a 24 GB GPU). Best quality; animates a **first frame**
+  (make your keyframes in Gemini / ChatGPT / Midjourney first). ~480p, 16 fps interpolated to 24 fps.
+- **Fast** - Wan 2.2 TI2V-5B. Also does text-to-video; runs on one 16 GB GPU.
+
+Every clip is exactly 4/6/8 s at 24 fps, 1080p, so cuts land on your act grid.
+
+### Writing prompts that look professional
+Describe **what moves** and **how the camera moves**, in one or two sentences: subject + action + setting + camera.
+*"The courier hesitates at the vault door, breath fogging in the cold, then pushes it open; slow push in."*
+Let shot size / lens / lighting do the cinematography words for you.
 """
 
 
 def ui():
     projects = list_projects(ROOT)
     with gr.Blocks(title="Shotloom") as demo:
-        gr.Markdown("# Shotloom\nOpen-source AI video studio - Wan 2.2 on free GPUs")
+        gr.Markdown("# Shotloom\nOpen-source cinematic AI video studio - Wan 2.2 on free GPUs")
         status = gr.Markdown(f"engine: {ENGINE.describe()}")
         with gr.Row():
             proj = gr.Dropdown(projects, value=projects[0] if projects else None,
@@ -282,7 +329,11 @@ def ui():
                 aspect = gr.Radio(list(video.ASPECTS), value="16:9", label="Aspect")
                 style = gr.Textbox(label="Style (appended to every AI prompt)",
                                    placeholder="cinematic documentary, 35mm, moody low-key light", scale=3)
-            negative = gr.Textbox(DEFAULT_NEGATIVE, label="Negative prompt", lines=2)
+            with gr.Row():
+                look = gr.Dropdown(LOOKS, value="cinematic film", label="Look (grade + style)")
+                letterbox = gr.Checkbox(False, label="2.39:1 letterbox on export")
+                grain = gr.Slider(0, 1, value=0.35, step=0.05, label="Film grain")
+            negative = gr.Textbox(DEFAULT_NEGATIVE, label="Negative prompt (fast engine only)", lines=2)
             save_set = gr.Button("Save settings")
 
         with gr.Tabs():
@@ -313,7 +364,11 @@ def ui():
                         with gr.Column(scale=3):
                             prompt = gr.Textbox(label="Prompt (action + camera, what moves)", lines=4)
                             notes = gr.Textbox(label="Notes")
-                        frame = gr.Image(label="First frame (optional)", type="filepath", scale=2)
+                        frame = gr.Image(label="First frame", type="filepath", scale=2)
+                    with gr.Row():
+                        size = gr.Dropdown(SIZES, value="auto", label="Shot size")
+                        lens = gr.Dropdown(LENSES, value="auto", label="Lens")
+                        light = gr.Dropdown(LIGHTS, value="auto", label="Lighting")
                     with gr.Row():
                         save_btn = gr.Button("Save shot", variant="primary")
                         del_btn = gr.Button("Delete shot", variant="stop")
@@ -327,10 +382,15 @@ def ui():
                     g_cam = gr.Dropdown(CAMS, value="auto", label="Camera", scale=1)
                 with gr.Row():
                     with gr.Column(scale=2):
-                        g_frame = gr.Image(label="First frame (empty = text-to-video)", type="filepath")
-                        g_prompt = gr.Textbox(label="Prompt", lines=4)
+                        g_frame = gr.Image(label="First frame", type="filepath")
+                        g_prompt = gr.Textbox(label="Prompt - what moves, and how the camera moves", lines=3)
                         with gr.Row():
-                            g_quality = gr.Radio(list(QUALITY), value="standard", label="Quality")
+                            g_size = gr.Dropdown(SIZES, value="auto", label="Shot size")
+                            g_lens = gr.Dropdown(LENSES, value="auto", label="Lens")
+                            g_light = gr.Dropdown(LIGHTS, value="auto", label="Lighting")
+                        g_preview = gr.Markdown()
+                        with gr.Row():
+                            g_quality = gr.Radio(list(QUALITY_NAMES), value="standard", label="Quality")
                             g_seed = gr.Number(-1, label="Seed (-1 random)", precision=0)
                             g_steps = gr.Slider(0, 60, value=0, step=1, label="Steps (0 = preset)")
                         with gr.Row():
@@ -354,7 +414,7 @@ def ui():
                     b_still = gr.Checkbox(True, label="STILL shots")
                     b_missing = gr.Checkbox(True, label="Only shots without a take")
                     b_ph = gr.Checkbox(False, label="Placeholder stills for AI shots not done")
-                    b_quality = gr.Radio(list(QUALITY), value="standard", label="Quality")
+                    b_quality = gr.Radio(list(QUALITY_NAMES), value="standard", label="Quality")
                 with gr.Row():
                     b_run = gr.Button("Run batch", variant="primary")
                     b_stop = gr.Button("Stop", variant="stop")
@@ -366,7 +426,9 @@ def ui():
                                      interactive=False, max_height=380)
                 with gr.Row():
                     narration = gr.Audio(label="Narration (optional)", type="filepath")
-                    build_btn = gr.Button("Build film", variant="primary")
+                    with gr.Column():
+                        s_finish = gr.Checkbox(True, label="Cinematic finish (grade, grain, letterbox)")
+                        build_btn = gr.Button("Build film", variant="primary")
                 s_log = gr.Markdown()
                 with gr.Row():
                     s_video = gr.Video(label="Export")
@@ -376,33 +438,37 @@ def ui():
                 gr.Markdown(HELP)
 
         # ---------------- wiring
-        proj_out = [table, aspect, style, negative, sel, g_shot, status, scene]
+        proj_out = [table, aspect, style, negative, sel, g_shot, status, scene, look, letterbox, grain]
         proj.change(open_project, proj, proj_out)
         create.click(create_project, new_name, [proj, new_name])
-        save_set.click(save_settings, [proj, aspect, style, negative], status)
+        save_set.click(save_settings, [proj, aspect, style, negative, look, letterbox, grain], status)
 
         do_import.click(import_csv, [proj, csv_file, imgs, replace],
                         [import_msg, table, sel, g_shot, status, scene])
-        sel.change(load_shot, [proj, sel], [sid, secs, mode, cam, prompt, notes, frame])
-        save_btn.click(save_shot, [proj, sel, sid, secs, mode, cam, prompt, notes, frame],
+        sel.change(load_shot, [proj, sel], [sid, secs, mode, cam, prompt, notes, frame, size, lens, light])
+        save_btn.click(save_shot, [proj, sel, sid, secs, mode, cam, prompt, notes, frame, size, lens, light],
                        [table, sel, g_shot, status, scene, shot_msg])
         del_btn.click(delete_shot, [proj, sel], [table, sel, g_shot, status, scene])
         up_mv.click(lambda n, s: move_shot(n, s, -1), [proj, sel], [table, scene])
         down_mv.click(lambda n, s: move_shot(n, s, 1), [proj, sel], [table, scene])
 
-        g_view_out = [g_frame, g_prompt, g_cam, g_secs, g_takes, g_video]
+        g_view_out = [g_frame, g_prompt, g_cam, g_secs, g_takes, g_video, g_size, g_lens, g_light]
         g_shot.change(gen_view, [proj, g_shot], g_view_out)
-        g_in = [proj, g_shot, g_frame, g_prompt, g_cam, g_secs, g_quality, g_seed, g_steps]
+        pv_in = [proj, g_prompt, g_cam, g_size, g_lens, g_light]
+        for comp in (g_prompt, g_cam, g_size, g_lens, g_light):
+            comp.change(prompt_preview, pv_in, g_preview)
+        g_in = [proj, g_shot, g_frame, g_prompt, g_cam, g_secs, g_quality, g_seed, g_steps,
+                g_size, g_lens, g_light]
         g_out = [g_video, g_takes, g_log, table, status, scene]
-        g_ai.click(lambda *a: do_generate(*a, "ai"), g_in, g_out)
-        g_still.click(lambda *a: do_generate(*a, "still"), g_in, g_out)
+        g_ai.click(gen_ai, g_in, g_out)
+        g_still.click(gen_still, g_in, g_out)
         g_takes.input(pick_take, [proj, g_shot, g_takes], g_video)
         g_use.click(use_take, [proj, g_shot, g_takes], [table, scene])
         g_ext.click(do_extend, [proj, g_shot, g_ext_prompt], [g_shot, sel, table, scene])
 
         b_run.click(run_batch, [proj, b_ai, b_still, b_missing, b_ph, b_quality], b_log)
         b_stop.click(stop_batch, None, b_log)
-        build_btn.click(do_build, [proj, narration], [s_video, s_file, s_log, scene])
+        build_btn.click(do_build, [proj, narration, s_finish], [s_video, s_file, s_log, scene])
 
         def refresh_projects(current):
             names = list_projects(ROOT)
@@ -418,7 +484,8 @@ def main():
     global ENGINE, ROOT
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", default=os.environ.get("SHOTLOOM_ENGINE", "auto"),
-                    choices=["auto", "wan", "preview"])
+                    choices=["auto", "cinematic", "fast", "preview", "wan"],
+                    help="cinematic = Wan 2.2 A14B Lightning, fast = Wan 2.2 5B, preview = CPU camera moves")
     ap.add_argument("--home", default=ROOT, help="folder for projects")
     ap.add_argument("--share", action="store_true", help="public gradio.live link")
     ap.add_argument("--port", type=int, default=7860)

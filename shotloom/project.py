@@ -40,6 +40,9 @@ class Shot:
     mode: str = "AI"          # AI = generate video, STILL = camera move on the frame
     prompt: str = ""
     camera: str = "auto"
+    size: str = "auto"        # shot size preset (looks.SHOT_SIZES)
+    lens: str = "auto"        # lens preset (looks.LENSES)
+    light: str = "auto"       # lighting preset (looks.LIGHTING)
     frame: str = ""           # relative path of the first frame, "" = text-to-video
     notes: str = ""
     takes: list = field(default_factory=list)
@@ -59,6 +62,9 @@ class Project:
         self.aspect = "16:9"
         self.style = ""
         self.negative = ""
+        self.look = "cinematic film"
+        self.letterbox = False
+        self.grain = 0.35
         self.shots: list[Shot] = []
         for sub in ("frames", "takes", "exports", "audio"):
             os.makedirs(os.path.join(self.dir, sub), exist_ok=True)
@@ -78,15 +84,21 @@ class Project:
         self.aspect = data.get("aspect", "16:9")
         self.style = data.get("style", "")
         self.negative = data.get("negative", "")
+        self.look = data.get("look", "cinematic film")
+        self.letterbox = bool(data.get("letterbox", False))
+        self.grain = float(data.get("grain", 0.35))
         self.shots = []
+        known = set(Shot.__dataclass_fields__)
+        tknown = set(Take.__dataclass_fields__)
         for s in data.get("shots", []):
-            takes = [Take(**t) for t in s.pop("takes", [])]
-            self.shots.append(Shot(**s, takes=takes))
+            takes = [Take(**{k: v for k, v in t.items() if k in tknown}) for t in s.pop("takes", [])]
+            self.shots.append(Shot(**{k: v for k, v in s.items() if k in known}, takes=takes))
 
     def save(self):
         with _lock:
             data = {"name": self.name, "aspect": self.aspect, "style": self.style,
-                    "negative": self.negative,
+                    "negative": self.negative, "look": self.look, "letterbox": self.letterbox,
+                    "grain": self.grain,
                     "shots": [asdict(s) for s in self.shots]}
             tmp = self.path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -178,13 +190,17 @@ class Project:
                             mode="STILL" if typ == "STILL" else "AI",
                             prompt=r.get("motion_prompt") or r.get("prompt") or "",
                             camera=(r.get("camera_move") or "auto").lower(),
+                            size=(r.get("shot_size") or "auto").lower(),
+                            lens=(r.get("lens") or "auto").lower(),
+                            light=(r.get("lighting") or "auto").lower(),
                             notes=r.get("notes", ""))
-                img = r.get("image") or sid
+                named = r.get("image", "")
+                img = named or sid            # blank column: fall back to an image named after the shot
                 src = images.get(img.lower()) or images.get(os.path.splitext(img)[0].lower())
                 if src:
                     self.set_frame(shot, src)
-                elif img and image_paths:
-                    missing.append(f"{sid} ({img})")
+                elif named and image_paths:   # only report images the CSV actually asked for
+                    missing.append(f"{sid} ({named})")
                 old = self.get(sid)
                 if old and not shot.frame:
                     shot.frame = old.frame
