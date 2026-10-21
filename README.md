@@ -9,6 +9,22 @@ Powered by [Wan 2.2](https://github.com/Wan-Video/Wan2.2) (Apache-2.0) through ð
 
 ---
 
+## Two ways to run it
+
+| | **Python studio** (this folder) | **[Shotloom Web](web/)** |
+|---|---|---|
+| Models | Wan 2.2, open weights | Veo 3.1, Seedance 2.0, Kling 3.0, FLUX 3, LTX-2 â€” any fal.ai model |
+| Runs on | free Kaggle T4 x2, or your own GPU | any browser; renders happen on fal.ai |
+| Cost | free (your time and a free GPU) | pay per second, with **your own** fal.ai key (BYOK) |
+| Hosting | Kaggle notebook or local | free on Vercel (set **Root Directory** to `web`) |
+| Quality | as far as free hardware goes | the same models hosted tools use |
+
+Same ideas in both: shots, takes, extend, cinematographer presets, scenebuilder, one finished MP4.
+Start with the web app if you have a fal key; start with the notebook if your budget is zero.
+See **[web/README.md](web/README.md)** for the web app.
+
+---
+
 ## Features
 
 | | |
