@@ -1,0 +1,32 @@
+{
+  "name": "shotloom-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shotloom Web — a Flow-style AI video studio in the browser. Bring your own fal.ai key: Veo 3.1, Seedance 2.0, Kling 3.0, LTX-2 and any other fal video model.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "postinstall": "node scripts/copy-ffmpeg.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types tests/*.test.ts"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "idb-keyval": "6.3.0",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
