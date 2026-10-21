@@ -1,0 +1,206 @@
+{
+ "openapi": "3.0.4",
+ "info": {
+  "title": "Queue OpenAPI for bytedance/seedance-2.0/image-to-video",
+  "version": "1.0.0"
+ },
+ "components": {
+  "schemas": {
+   "QueueStatus": {
+    "type": "object",
+    "properties": {
+     "status": {
+      "type": "string"
+     }
+    }
+   },
+   "SeedanceV2ImageToVideoInput": {
+    "title": "ImageToVideoInput",
+    "type": "object",
+    "x-fal-order-properties": [
+     "prompt",
+     "image_url",
+     "end_image_url",
+     "resolution",
+     "duration",
+     "aspect_ratio",
+     "generate_audio",
+     "bitrate_mode",
+     "codec",
+     "seed",
+     "end_user_id"
+    ],
+    "required": [
+     "prompt",
+     "image_url"
+    ],
+    "properties": {
+     "prompt": {
+      "title": "Prompt",
+      "type": "string",
+      "description": "The text prompt describing the desired motion."
+     },
+     "image_url": {
+      "title": "Image Url",
+      "type": "string",
+      "description": "Starting frame"
+     },
+     "end_image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "End Image Url"
+     },
+     "resolution": {
+      "enum": [
+       "480p",
+       "720p",
+       "1080p",
+       "4k"
+      ],
+      "title": "Resolution",
+      "type": "string",
+      "default": "720p"
+     },
+     "duration": {
+      "enum": [
+       "auto",
+       "4",
+       "5",
+       "6",
+       "8",
+       "10",
+       "15"
+      ],
+      "title": "Duration",
+      "type": "string",
+      "default": "auto"
+     },
+     "aspect_ratio": {
+      "allOf": [
+       {
+        "$ref": "#/components/schemas/AspectRatioEnum"
+       }
+      ],
+      "default": "auto",
+      "description": "Aspect ratio"
+     },
+     "generate_audio": {
+      "title": "Generate Audio",
+      "type": "boolean",
+      "default": true
+     },
+     "bitrate_mode": {
+      "enum": [
+       "standard",
+       "high"
+      ],
+      "type": "string",
+      "default": "standard"
+     },
+     "codec": {
+      "enum": [
+       "auto",
+       "H264",
+       "H265"
+      ],
+      "type": "string",
+      "default": "auto"
+     },
+     "seed": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Seed"
+     },
+     "end_user_id": {
+      "type": "string"
+     }
+    }
+   },
+   "AspectRatioEnum": {
+    "enum": [
+     "auto",
+     "21:9",
+     "16:9",
+     "4:3",
+     "1:1",
+     "3:4",
+     "9:16"
+    ],
+    "type": "string",
+    "title": "AspectRatioEnum"
+   },
+   "SeedanceV2Output": {
+    "type": "object",
+    "properties": {
+     "video": {
+      "$ref": "#/components/schemas/File"
+     },
+     "seed": {
+      "type": "integer"
+     }
+    }
+   },
+   "File": {
+    "type": "object",
+    "properties": {
+     "url": {
+      "type": "string"
+     }
+    }
+   }
+  }
+ },
+ "paths": {
+  "/bytedance/seedance-2.0/image-to-video/requests/{request_id}/status": {
+   "get": {
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/bytedance/seedance-2.0/image-to-video/requests/{request_id}/cancel": {
+   "put": {
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/bytedance/seedance-2.0/image-to-video": {
+   "post": {
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SeedanceV2ImageToVideoInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/bytedance/seedance-2.0/image-to-video/requests/{request_id}": {
+   "get": {
+    "responses": {
+     "200": {}
+    }
+   }
+  }
+ }
+}

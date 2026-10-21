@@ -1,0 +1,111 @@
+{
+ "openapi": "3.0.4",
+ "info": {
+  "title": "kling",
+  "version": "1"
+ },
+ "components": {
+  "schemas": {
+   "KlingV3ProI2VInput": {
+    "type": "object",
+    "required": [
+     "start_image_url"
+    ],
+    "properties": {
+     "prompt": {
+      "type": "string"
+     },
+     "start_image_url": {
+      "type": "string"
+     },
+     "end_image_url": {
+      "type": "string"
+     },
+     "duration": {
+      "enum": [
+       "3",
+       "4",
+       "5",
+       "6",
+       "7",
+       "8",
+       "9",
+       "10",
+       "11",
+       "12",
+       "13",
+       "14",
+       "15"
+      ],
+      "type": "string",
+      "default": "5"
+     },
+     "generate_audio": {
+      "type": "boolean",
+      "default": true
+     },
+     "elements": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Element"
+      }
+     },
+     "cfg_scale": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.5
+     }
+    }
+   },
+   "Element": {
+    "type": "object",
+    "properties": {
+     "frontal_image_url": {
+      "type": "string"
+     }
+    }
+   }
+  }
+ },
+ "paths": {
+  "/fal-ai/kling-video/v3/pro/image-to-video/requests/{request_id}/status": {
+   "get": {
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/fal-ai/kling-video/v3/pro/image-to-video/requests/{request_id}/cancel": {
+   "put": {
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/fal-ai/kling-video/v3/pro/image-to-video": {
+   "post": {
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/KlingV3ProI2VInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/fal-ai/kling-video/v3/pro/image-to-video/requests/{request_id}": {
+   "get": {
+    "responses": {
+     "200": {}
+    }
+   }
+  }
+ }
+}

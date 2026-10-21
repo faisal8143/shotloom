@@ -1,0 +1,114 @@
+{
+ "openapi": "3.0.4",
+ "info": {
+  "title": "veo",
+  "version": "1"
+ },
+ "components": {
+  "schemas": {
+   "Veo31FastInput": {
+    "type": "object",
+    "required": [
+     "prompt"
+    ],
+    "properties": {
+     "prompt": {
+      "type": "string"
+     },
+     "aspect_ratio": {
+      "enum": [
+       "16:9",
+       "9:16"
+      ],
+      "type": "string",
+      "default": "16:9"
+     },
+     "duration": {
+      "enum": [
+       "4s",
+       "6s",
+       "8s"
+      ],
+      "type": "string",
+      "default": "8s"
+     },
+     "negative_prompt": {
+      "type": "string"
+     },
+     "resolution": {
+      "enum": [
+       "720p",
+       "1080p",
+       "4k"
+      ],
+      "type": "string",
+      "default": "720p"
+     },
+     "generate_audio": {
+      "type": "boolean",
+      "default": true
+     },
+     "seed": {
+      "type": "integer"
+     },
+     "auto_fix": {
+      "type": "boolean",
+      "default": false
+     },
+     "safety_tolerance": {
+      "enum": [
+       "1",
+       "2",
+       "3",
+       "4",
+       "5",
+       "6"
+      ],
+      "type": "string",
+      "default": "4"
+     }
+    }
+   }
+  }
+ },
+ "paths": {
+  "/fal-ai/veo3.1/fast/requests/{request_id}/status": {
+   "get": {
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/fal-ai/veo3.1/fast/requests/{request_id}/cancel": {
+   "put": {
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/fal-ai/veo3.1/fast": {
+   "post": {
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Veo31FastInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {}
+    }
+   }
+  },
+  "/fal-ai/veo3.1/fast/requests/{request_id}": {
+   "get": {
+    "responses": {
+     "200": {}
+    }
+   }
+  }
+ }
+}
