@@ -2,16 +2,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
+  aspectField,
   drainSse,
   findGradioVideo,
   hfAutoSize,
   hfEndpoint,
+  isGradioUrl,
   isValidSpace,
+  isValidTarget,
   parseGradioInfo,
   parseHfEndpoint,
   pickSpaceApi,
   positionalArgs,
   progressLine,
+  spaceBase,
   spaceSlug,
 } from "../lib/hf.ts";
 
@@ -32,11 +36,53 @@ test("endpoint ids round-trip", () => {
   assert.equal(spaceSlug("Lightricks/LTX_Video.Distilled"), "lightricks-ltx-video-distilled");
 });
 
+test("a studio you run yourself is addressed by URL", () => {
+  const url = "https://abc123.gradio.live";
+  assert.equal(isGradioUrl(url), true);
+  assert.equal(isGradioUrl("http://127.0.0.1:7860"), true, "a local studio is allowed");
+  assert.equal(isGradioUrl("http://example.com"), false, "plain http elsewhere is not");
+  assert.equal(isGradioUrl("https://evil.com/?x=1"), false, "no query strings");
+  assert.equal(isValidTarget(url) && isValidTarget("owner/space"), true);
+
+  // the api name is split off the END, because the URL carries a colon of its own
+  assert.deepEqual(parseHfEndpoint(hfEndpoint(url, "/generate_video")), { space: url, api: "/generate_video" });
+  assert.deepEqual(parseHfEndpoint(hfEndpoint(url)), { space: url, api: "" });
+  assert.equal(spaceBase(url), url);
+  assert.equal(spaceBase("https://abc.gradio.live/"), "https://abc.gradio.live", "trailing slash dropped");
+});
+
 test("picks the endpoint that returns a video", () => {
   assert.equal(pickSpaceApi(info, "text"), "/text_to_video");
   assert.equal(pickSpaceApi(info, "image"), "/image_to_video");
   // /handle_image_upload_for_dims returns a slider value, not a clip
   assert.notEqual(pickSpaceApi(info, ""), "/handle_image_upload_for_dims");
+});
+
+test("picks the studio's generate endpoint out of a whole UI", () => {
+  // Shotloom's own Kaggle studio exposes every button it has; only one of them
+  // is the one to call.
+  const studio = {
+    named_endpoints: {
+      "/gen_view": {
+        parameters: [{ parameter_name: "name" }, { parameter_name: "sid" }],
+        returns: [{ component: "Video" }, { component: "Dropdown" }],
+      },
+      "/pick_take": { parameters: [{ parameter_name: "label" }], returns: [{ component: "Video" }] },
+      "/do_build": {
+        parameters: [{ parameter_name: "name" }, { parameter_name: "audio" }],
+        returns: [{ component: "Video" }],
+      },
+      "/generate_video": {
+        parameters: [
+          { parameter_name: "prompt", parameter_has_default: false },
+          { parameter_name: "seconds", parameter_has_default: true },
+        ],
+        returns: [{ component: "Video" }, { component: "Number" }],
+      },
+    },
+  };
+  assert.equal(pickSpaceApi(studio, "text"), "/generate_video");
+  assert.equal(pickSpaceApi(studio, "image"), "/generate_video");
 });
 
 test("reads a Space's API into a model schema", () => {
@@ -91,6 +137,27 @@ test("fits the frame to the project's aspect ratio", () => {
 
   const tall = hfAutoSize(schema, "9:16");
   assert.ok(tall.height_ui > tall.width_ui);
+});
+
+test("finds the target's own aspect-ratio knob", () => {
+  const schema = parseGradioInfo(
+    {
+      named_endpoints: {
+        "/generate_video": {
+          parameters: [
+            { parameter_name: "prompt", parameter_has_default: true, parameter_default: "", component: "Textbox", python_type: { type: "str" } },
+            { parameter_name: "aspect", parameter_has_default: true, parameter_default: "16:9", component: "Dropdown", python_type: { type: "Literal['16:9', '9:16']" } },
+          ],
+          returns: [{ component: "Video" }],
+        },
+      },
+    },
+    "https://abc.gradio.live",
+    "/generate_video",
+  );
+  assert.equal(aspectField(schema)?.name, "aspect");
+  assert.deepEqual(aspectField(schema)?.options, ["16:9", "9:16"]);
+  assert.deepEqual(hfAutoSize(schema, "16:9"), {}, "no width/height knobs to set here");
 });
 
 test("reads the clip out of a finished event", () => {
