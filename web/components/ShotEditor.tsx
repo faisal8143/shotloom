@@ -163,13 +163,13 @@ export function ShotEditor({
         <label className="field">
           <span className="field__label">Model</span>
           <select value={shot.modelKey} onChange={(e) => onChange({ modelKey: e.target.value, params: {}, customEndpoint: undefined })}>
-            <optgroup label="Free — Hugging Face Spaces">
+            <optgroup label="Free — Spaces & your own GPU">
               {MODELS.filter((m) => m.free).map((m) => (
                 <option key={m.key} value={m.key}>
                   {m.name} · {m.maker}
                 </option>
               ))}
-              <option value={SPACE_KEY}>Any Hugging Face Space…</option>
+              <option value={SPACE_KEY}>Any Space, or your own GPU…</option>
             </optgroup>
             <optgroup label="Paid — fal.ai (your key)">
               {MODELS.filter((m) => !m.free).map((m) => (
@@ -184,20 +184,22 @@ export function ShotEditor({
 
         {shot.modelKey === SPACE_KEY ? (
           <label className="field">
-            <span className="field__label">Space</span>
+            <span className="field__label">Space or studio URL</span>
             <input
               className="mono"
               value={shot.customEndpoint ?? ""}
               onChange={(e) => onChange({ customEndpoint: e.target.value, params: {} })}
-              placeholder="e.g. Lightricks/ltx-video-distilled"
+              placeholder="Lightricks/ltx-video-distilled — or https://xxxx.gradio.live"
               spellCheck={false}
             />
             <span className="field__hint">
-              Any running video Space from{" "}
+              A running video Space from{" "}
               <a href="https://huggingface.co/spaces?category=video-generation" target="_blank" rel="noreferrer">
                 huggingface.co/spaces
               </a>
-              . Shotloom reads its API and builds the settings below. Free, on your Hugging Face GPU quota.
+              , or the share link of a Shotloom studio you are running yourself — on a free Kaggle or Colab GPU,
+              a rented one, or your own PC. No daily quota on your own GPU. Shotloom reads whichever it is and
+              builds the settings below.
             </span>
           </label>
         ) : shot.modelKey === CUSTOM_KEY ? (
