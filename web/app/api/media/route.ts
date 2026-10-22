@@ -1,6 +1,6 @@
-// Streams a generated clip from fal's CDN through this site, for the two
-// browser features that need same-origin video bytes: grabbing a frame for
-// "Extend" and stitching the film. Only fal's own media hosts are allowed.
+// Streams a generated clip through this site, for the two browser features that
+// need same-origin video bytes: grabbing a frame for "Extend" and stitching the
+// film. Only fal's own media hosts and Hugging Face Spaces are allowed.
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +12,8 @@ function allowed(url: URL): boolean {
   const host = url.hostname;
   if (host === "fal.media" || host.endsWith(".fal.media")) return true;
   if (host === "storage.googleapis.com" && url.pathname.startsWith("/falserverless/")) return true;
+  // clips rendered by a free Hugging Face Space
+  if (host.endsWith(".hf.space")) return true;
   return false;
 }
 
