@@ -4,13 +4,14 @@ A Google-Flow-style AI video studio that runs in the browser. Write a shot, pick
 
 Generation runs one of two ways, switched by the Model dropdown:
 
-- **Free** — open weights on a [Hugging Face Space](https://huggingface.co/spaces). No key, no card, no account needed; it spends the Space's free GPU quota (about 2 minutes a day per browser, ~5 minutes with a free Hugging Face token, ~40 with PRO).
+- **Free, shared** — open weights on a [Hugging Face Space](https://huggingface.co/spaces). No key, no card, no account needed; it spends the Space's free GPU quota (about 2 minutes a day per browser, ~5 minutes with a free Hugging Face token, ~40 with PRO).
+- **Free, your own GPU** — the Shotloom studio in this repo's root, running on a free Kaggle or Colab GPU (or your own PC). Paste its share link and there is no daily quota at all: Kaggle alone gives about 30 GPU hours a week.
 - **Paid** — [fal.ai](https://fal.ai) with **your own API key** (BYOK), for the strongest models.
 
 | Model | Maker | Modes |
 |---|---|---|
 | **LTX Video (free)** | Lightricks, on a HF Space | text, image |
-| **Any Hugging Face Space (free)** | — | paste `owner/space` |
+| **Any Space, or your own GPU (free)** | — | paste `owner/space` or `https://…gradio.live` |
 | Veo 3.1 Fast | Google | text, image |
 | Veo 3.1 | Google | text, image, ingredients (reference images) |
 | Seedance 2.0 / 2.0 Mini | ByteDance | text, image (+ end frame) |
@@ -21,9 +22,19 @@ Generation runs one of two ways, switched by the Model dropdown:
 
 Shotloom reads each model's parameters from fal's own OpenAPI schema, so new models and new options appear without code changes.
 
-Shotloom reads a Space's parameters from its own `/gradio_api/info`, the same way it reads fal models from fal's OpenAPI schema, so any running video Space can be driven without code changes.
+Shotloom reads a Space's parameters from its own `/gradio_api/info`, the same way it reads fal models from fal's OpenAPI schema, so any running video Space can be driven without code changes. The studio in the repo root is a Gradio app too, which is why the same code can drive your own GPU.
 
-> A third, fully local path (open-source Wan 2.2 on a free Kaggle GPU) is the Python studio in the repo root.
+### Unlimited: run the model on your own GPU
+
+Nothing here trains a model - Wan 2.2 and LTX are open weights, already trained. What limits free generation is GPU time, so the way to make it unlimited is to bring your own GPU:
+
+1. Open `notebooks/shotloom_kaggle.ipynb` on [Kaggle](https://www.kaggle.com/code) (free T4 x2, ~30 hours a week), keep `WEB_APP = True`, and run it.
+2. It prints a `https://….gradio.live` link.
+3. In Shotloom Web: **Model → Any Space, or your own GPU…** and paste that link.
+
+Generation now runs on that GPU: no daily quota, no per-second billing. The same works for Colab, a rented GPU, or a PC with an NVIDIA card - anything that can run `python app.py --share`.
+
+Two things to know: the share link is public while the session runs (so stop the session when you are done), and the studio must allow the browser to call it. `--share` opens its API to any origin for exactly this reason; running it locally instead, pass `--allow-origin https://your-shotloom-site`.
 
 ## Features
 
@@ -77,7 +88,7 @@ fal queue  queue.fal.run/<endpoint>  →  video on fal's CDN
 The free path deliberately skips our own server: a Space can take minutes and holds the connection open the whole time, which a serverless function on a free plan would cut off. The browser can wait. The cost is that a take does not survive closing the tab - it is marked failed with *Try again* - while fal takes still resume.
 
 - `/api/fal/schema` turns fal's OpenAPI document into form fields (`lib/schema.ts`).
-- `/api/hf/schema` does the same for a Space's `/gradio_api/info` (`lib/hf.ts`), including which of its endpoints to call and the order its parameters go in. `lib/hf-client.ts` makes the call, uploads start frames to the Space and follows the event stream.
+- `/api/hf/schema` does the same for a Space's `/gradio_api/info` (`lib/hf.ts`), including which of its endpoints to call and the order its parameters go in. A full studio exposes every button it has, so the endpoint is scored, not guessed. `lib/hf-client.ts` makes the call, uploads start frames and follows the event stream.
 - `lib/plan.ts` picks the endpoint (text / image / ingredients) and builds the request.
 - `/api/media` streams clips from fal's CDN (allow-listed hosts only) so the browser can grab frames and stitch the film.
 - Status/result calls only follow URLs on fal's queue origin.
