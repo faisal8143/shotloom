@@ -14,6 +14,10 @@ function allowed(url: URL): boolean {
   if (host === "storage.googleapis.com" && url.pathname.startsWith("/falserverless/")) return true;
   // clips rendered by a free Hugging Face Space
   if (host.endsWith(".hf.space")) return true;
+  // or by a studio you run yourself, reached over a share link / tunnel
+  for (const suffix of [".gradio.live", ".trycloudflare.com", ".ngrok-free.app", ".ngrok.io", ".loca.lt", ".devtunnels.ms"]) {
+    if (host.endsWith(suffix)) return true;
+  }
   return false;
 }
 
