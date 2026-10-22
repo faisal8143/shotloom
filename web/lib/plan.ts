@@ -1,5 +1,5 @@
 // Decides which fal endpoint a shot uses and builds the exact input sent to it.
-import { hfAutoSize, hfEndpoint, isHfEndpoint, isValidSpace } from "./hf.ts";
+import { aspectField, hfAutoSize, hfEndpoint, isGradioUrl, isHfEndpoint, isValidTarget } from "./hf.ts";
 import { CUSTOM_KEY, SPACE_KEY, findModel, isValidEndpoint, pickEndpoint, type Mode } from "./models.ts";
 import { buildPrompt } from "./presets.ts";
 import {
@@ -25,10 +25,15 @@ export function chooseEndpoint(shot: Shot): EndpointChoice {
       .trim()
       .replace(/^https?:\/\/huggingface\.co\/spaces\//, "")
       .replace(/\/+$/, "");
-    if (!id) return { modelName: "Space", error: "Paste a Space, e.g. Lightricks/ltx-video-distilled" };
-    if (!isValidSpace(id)) return { modelName: "Space", error: "That doesn't look like a Space (use owner/space)." };
-    // the api name is left empty: the Space's own API list decides it
-    return { endpoint: hfEndpoint(id), mode: shot.startFrame ? "image" : "text", modelName: id.split("/").pop() ?? id };
+    if (!id) {
+      return { modelName: "Space", error: "Paste a Space (owner/space) or your own studio's URL." };
+    }
+    if (!isValidTarget(id)) {
+      return { modelName: "Space", error: "That isn't a Space (owner/space) or an https URL." };
+    }
+    // the api name is left empty: the target's own API list decides it
+    const label = isGradioUrl(id) ? new URL(id).hostname : (id.split("/").pop() ?? id);
+    return { endpoint: hfEndpoint(id), mode: shot.startFrame ? "image" : "text", modelName: label };
   }
   if (shot.modelKey === CUSTOM_KEY) {
     const id = (shot.customEndpoint ?? "").trim().replace(/^https?:\/\/fal\.ai\/models\//, "");
@@ -52,7 +57,11 @@ export function chooseEndpoint(shot: Shot): EndpointChoice {
 export function autoValues(schema: ModelSchema | undefined, project: Project, shot: Shot): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!schema) return out;
-  if (isHfEndpoint(schema.endpoint)) return hfAutoSize(schema, project.aspect);
+  if (isHfEndpoint(schema.endpoint)) {
+    const size = hfAutoSize(schema, project.aspect);
+    const ratio = matchAspect(aspectField(schema), project.aspect);
+    return ratio ? { ...size, [aspectField(schema)!.name]: ratio } : size;
+  }
   const ar = schema.fields.find((f) => f.name === "aspect_ratio");
   const match = matchAspect(ar, project.aspect);
   // with a start frame, models crop to it - let them infer unless the user chose

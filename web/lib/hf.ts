@@ -5,9 +5,14 @@
 // drive ANY Gradio video Space the same way the fal path is driven by fal's
 // OpenAPI document - no per-Space code.
 //
-// Endpoints are written as "hf:<owner>/<space>:<api_name>", e.g.
+// The same code drives a GPU you run yourself: Shotloom's own Kaggle/Colab
+// studio is a Gradio app too, so its share link works wherever a Space does.
+//
+// Endpoints are written as "hf:<target>:<api_name>", where <target> is either
+// an owner/space pair or a full https URL:
 //   hf:Lightricks/ltx-video-distilled:/text_to_video
-// The api_name may be left empty and is then chosen from the Space's own list.
+//   hf:https://abc123.gradio.live:/generate_video
+// The api_name may be left empty and is then chosen from the target's own list.
 import type { Field, FieldKind, ModelSchema } from "./schema.ts";
 
 export const HF_PREFIX = "hf:";
@@ -31,13 +36,32 @@ export function isValidSpace(id: string): boolean {
   return SPACE_RE.test(id) && !id.includes("..");
 }
 
+/** A full URL to a Gradio app: a Kaggle/Colab share link, or any tunnel. */
+export function isGradioUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value) || value.length > 300) return false;
+  try {
+    const u = new URL(value);
+    return (u.protocol === "https:" || u.hostname === "127.0.0.1" || u.hostname === "localhost") && !u.username && !u.search;
+  } catch {
+    return false;
+  }
+}
+
+/** Either form of target: "owner/space" or a URL. */
+export function isValidTarget(value: string): boolean {
+  return isValidSpace(value) || isGradioUrl(value);
+}
+
 export function parseHfEndpoint(endpoint: string): HfTarget | null {
   if (!isHfEndpoint(endpoint)) return null;
   const rest = endpoint.slice(HF_PREFIX.length);
-  const cut = rest.indexOf(":");
-  const space = (cut === -1 ? rest : rest.slice(0, cut)).trim();
-  const api = cut === -1 ? "" : rest.slice(cut + 1).trim();
-  if (!isValidSpace(space)) return null;
+  // split at the LAST colon, because a URL target contains one of its own
+  const cut = rest.lastIndexOf(":");
+  const tail = cut === -1 ? "" : rest.slice(cut + 1).trim();
+  const takesTail = cut !== -1 && (tail === "" || tail.startsWith("/"));
+  const space = (takesTail ? rest.slice(0, cut) : rest).trim();
+  const api = takesTail ? tail : "";
+  if (!isValidTarget(space)) return null;
   if (api && !/^\/[\w./-]{1,120}$/.test(api)) return null;
   return { space, api };
 }
@@ -47,10 +71,11 @@ export function spaceSlug(space: string): string {
   return space.toLowerCase().replace(/[._]/g, "-").replace("/", "-");
 }
 
-/** Base URL of a Space. SHOTLOOM_HF_BASE points the tests at a mock Space. */
+/** Base URL of a target. SHOTLOOM_HF_BASE points the tests at a mock Space. */
 export function spaceBase(space: string, override?: string): string {
   const base = (override ?? "").replace(/\/+$/, "");
   if (base) return base;
+  if (isGradioUrl(space)) return space.replace(/\/+$/, "");
   return `https://${spaceSlug(space)}.hf.space`;
 }
 
@@ -116,18 +141,29 @@ function returnsVideo(endpoint: Json): boolean {
   });
 }
 
-/** Picks the endpoint of a Space that fits the mode we want. */
+/**
+ * Picks which endpoint to call. A Space usually has one obvious choice, but a
+ * full studio (Shotloom's own Kaggle app) exposes every button it has, so this
+ * scores candidates instead of taking the first that returns a video.
+ */
 export function pickSpaceApi(info: Json, want: "text" | "image" | "" = ""): string | undefined {
   const named: Json = info?.named_endpoints ?? {};
   const names = Object.keys(named).filter((n) => returnsVideo(named[n]));
   if (!names.length) return undefined;
-  const byWant =
-    want === "image"
-      ? names.find((n) => /image_to_video|i2v/i.test(n))
-      : want === "text"
-        ? names.find((n) => /text_to_video|t2v/i.test(n))
-        : undefined;
-  return byWant ?? names.find((n) => /text_to_video|t2v/i.test(n)) ?? names[0];
+
+  const score = (name: string): number => {
+    const params: Json[] = named[name]?.parameters ?? [];
+    let s = 0;
+    if (/generate_video|text_to_video|t2v/i.test(name)) s += 8;
+    if (want === "image" && /image_to_video|i2v/i.test(name)) s += 10;
+    if (want === "text" && /text_to_video|t2v/i.test(name)) s += 4;
+    if (params.some((p) => /prompt/i.test(String(p?.parameter_name ?? "")))) s += 6;
+    // anything we would have to guess a value for counts against it
+    s -= params.filter((p) => !p?.parameter_has_default).length * 2;
+    s -= params.length / 20;
+    return s;
+  };
+  return [...names].sort((a, b) => score(b) - score(a))[0];
 }
 
 export function parseGradioInfo(info: Json, space: string, api: string): ModelSchema {
@@ -186,6 +222,11 @@ export function positionalArgs(schema: ModelSchema, input: Record<string, unknow
     if (name in input && input[name] !== undefined && input[name] !== "") return input[name];
     return defaults[name] ?? null;
   });
+}
+
+/** The target's own aspect-ratio knob, if it has one. */
+export function aspectField(schema: ModelSchema): Field | undefined {
+  return schema.fields.find((f) => f.kind === "enum" && /aspect/i.test(f.name));
 }
 
 /** Width/height a Space should use for the project's aspect ratio. */
