@@ -1,0 +1,39 @@
+{
+  "named_endpoints": {
+    "/text_to_video": {
+      "parameters": [
+        { "label": "Prompt", "parameter_name": "prompt", "parameter_has_default": true, "parameter_default": "A majestic dragon flying over a medieval castle", "python_type": { "type": "str" }, "component": "Textbox" },
+        { "label": "Negative Prompt", "parameter_name": "negative_prompt", "parameter_has_default": true, "parameter_default": "worst quality, inconsistent motion, blurry, jittery, distorted", "python_type": { "type": "str" }, "component": "Textbox" },
+        { "label": "image_n", "parameter_name": "input_image_filepath", "parameter_has_default": true, "parameter_default": null, "python_type": { "type": "str" }, "component": "Textbox" },
+        { "label": "video_n", "parameter_name": "input_video_filepath", "parameter_has_default": true, "parameter_default": null, "python_type": { "type": "str" }, "component": "Textbox" },
+        { "label": "Height", "parameter_name": "height_ui", "parameter_has_default": true, "parameter_default": 512, "python_type": { "type": "float" }, "component": "Slider", "component_props": { "minimum": 256, "maximum": 768 } },
+        { "label": "Width", "parameter_name": "width_ui", "parameter_has_default": true, "parameter_default": 704, "python_type": { "type": "float" }, "component": "Slider", "component_props": { "minimum": 256, "maximum": 768 } },
+        { "label": "task", "parameter_name": "mode", "parameter_has_default": true, "parameter_default": "image-to-video", "python_type": { "type": "Literal['text-to-video', 'image-to-video', 'video-to-video']" }, "component": "Radio" },
+        { "label": "Video Duration (seconds)", "parameter_name": "duration_ui", "parameter_has_default": true, "parameter_default": 2, "python_type": { "type": "float" }, "component": "Slider", "component_props": { "minimum": 1, "maximum": 8 } },
+        { "label": "Frames to use from input video", "parameter_name": "ui_frames_to_use", "parameter_has_default": true, "parameter_default": 9, "python_type": { "type": "float" }, "component": "Slider" },
+        { "label": "Seed", "parameter_name": "seed_ui", "parameter_has_default": true, "parameter_default": 42, "python_type": { "type": "int" }, "component": "Number" },
+        { "label": "Randomize Seed", "parameter_name": "randomize_seed", "parameter_has_default": true, "parameter_default": true, "python_type": { "type": "bool" }, "component": "Checkbox" },
+        { "label": "Guidance Scale (CFG)", "parameter_name": "ui_guidance_scale", "parameter_has_default": true, "parameter_default": 1, "python_type": { "type": "float" }, "component": "Slider" },
+        { "label": "Improve Texture", "parameter_name": "improve_texture_flag", "parameter_has_default": true, "parameter_default": true, "python_type": { "type": "bool" }, "component": "Checkbox" }
+      ],
+      "returns": [
+        { "label": "Generated Video", "component": "Video", "python_type": { "type": "dict(video: filepath, subtitles: filepath | None)" } },
+        { "label": "Seed", "component": "Number", "python_type": { "type": "int" } }
+      ]
+    },
+    "/image_to_video": {
+      "parameters": [
+        { "label": "Prompt", "parameter_name": "prompt", "parameter_has_default": true, "parameter_default": "A majestic dragon", "python_type": { "type": "str" }, "component": "Textbox" },
+        { "label": "image_n", "parameter_name": "input_image_filepath", "parameter_has_default": false, "parameter_default": null, "python_type": { "type": "str" }, "component": "Textbox" },
+        { "label": "task", "parameter_name": "mode", "parameter_has_default": true, "parameter_default": "image-to-video", "python_type": { "type": "Literal['text-to-video', 'image-to-video', 'video-to-video']" }, "component": "Radio" }
+      ],
+      "returns": [
+        { "label": "Generated Video", "component": "Video", "python_type": { "type": "dict(video: filepath, subtitles: filepath | None)" } }
+      ]
+    },
+    "/handle_image_upload_for_dims": {
+      "parameters": [{ "label": "img", "parameter_name": "image_filepath", "parameter_has_default": true, "parameter_default": null, "python_type": { "type": "str" }, "component": "Image" }],
+      "returns": [{ "label": "Height", "component": "Slider", "python_type": { "type": "float" } }]
+    }
+  }
+}
