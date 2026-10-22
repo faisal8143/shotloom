@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import tempfile
 import threading
 
 import gradio as gr
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 from shotloom import looks, studio, video
 from shotloom.engines import CAMERA_PROMPTS, DEFAULT_NEGATIVE, QUALITY_NAMES, build_prompt, make_engine
@@ -322,6 +325,26 @@ Let shot size / lens / lighting do the cinematography words for you.
 """
 
 
+# --------------------------------------------------------------------------- API
+# One clip in, one clip out - no project bookkeeping. This is what Shotloom Web
+# calls when you point it at this studio instead of at a paid cloud model, so a
+# free Kaggle/Colab GPU can drive the same timeline. See web/README.md.
+def api_generate(prompt, seconds=4, aspect="16:9", quality="standard", seed=-1,
+                 camera="auto", start_image=None, progress=gr.Progress()):
+    prompt = (prompt or "").strip()
+    if not prompt and not start_image:
+        raise gr.Error("Write a prompt, or send a start frame.")
+    out = os.path.join(tempfile.mkdtemp(prefix="shotloom-api-"), "take.mp4")
+    try:
+        path, used = ENGINE.generate(
+            prompt=build_prompt(prompt, camera=camera), image_path=start_image,
+            seconds=float(seconds), aspect=aspect, quality=quality, seed=int(seed), out=out,
+            camera=camera, progress=lambda i, n: progress(i / n, desc=f"step {i}/{n}"))
+    except Exception as e:
+        raise gr.Error(str(e))
+    return path, int(used)
+
+
 def ui():
     projects = list_projects(ROOT)
     with gr.Blocks(title="Shotloom") as demo:
@@ -478,6 +501,22 @@ def ui():
         b_stop.click(stop_batch, None, b_log)
         build_btn.click(do_build, [proj, narration, s_finish], [s_video, s_file, s_log, scene])
 
+        # ---------------- API for Shotloom Web (hidden: not part of this UI)
+        with gr.Group(visible=False):
+            a_prompt = gr.Textbox(label="Prompt")
+            a_seconds = gr.Slider(1, 10, value=4, step=1, label="Seconds")
+            a_aspect = gr.Dropdown(list(video.ASPECTS), value="16:9", label="Aspect")
+            a_quality = gr.Dropdown(list(QUALITY_NAMES), value="standard", label="Quality")
+            a_seed = gr.Number(-1, precision=0, label="Seed (-1 = random)")
+            a_camera = gr.Dropdown(CAMS, value="auto", label="Camera move")
+            a_image = gr.Image(type="filepath", label="Start frame")
+            a_video = gr.Video(label="Generated video")
+            a_seed_used = gr.Number(label="Seed used")
+            a_go = gr.Button("Generate")
+        a_go.click(api_generate,
+                   [a_prompt, a_seconds, a_aspect, a_quality, a_seed, a_camera, a_image],
+                   [a_video, a_seed_used], api_name="generate_video")
+
         def refresh_projects(current):
             names = list_projects(ROOT)
             return gr.Dropdown(choices=names, value=current if current in names else
@@ -500,14 +539,29 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--password", default=os.environ.get("SHOTLOOM_PASSWORD", ""),
                     help="protect a shared link: user 'shotloom' + this password")
+    ap.add_argument("--allow-origin", action="append", metavar="ORIGIN",
+                    default=[o for o in os.environ.get("SHOTLOOM_ALLOW_ORIGIN", "").split(",") if o],
+                    help="let a web page on ORIGIN call this studio's API (repeatable). "
+                         "Shotloom Web needs this; with --share it defaults to any origin.")
     a = ap.parse_args()
     ROOT = os.path.abspath(a.home)
     os.makedirs(ROOT, exist_ok=True)
     ENGINE = make_engine(a.engine)
     print("Shotloom engine:", ENGINE.describe(), "| projects:", ROOT)
+
+    # Gradio sends no CORS headers, so a web page on another origin cannot call
+    # it. Shotloom Web is exactly that, so allow the origins asked for - every
+    # origin when the link is already public (--share), none by default.
+    origins = a.allow_origin or (["*"] if a.share else [])
+    app_kwargs = {}
+    if origins:
+        app_kwargs["middleware"] = [
+            Middleware(CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"])
+        ]
+        print("API open to:", ", ".join(origins))
     ui().queue(default_concurrency_limit=1).launch(
         server_name=a.host, server_port=a.port, share=a.share, allowed_paths=[ROOT],
-        auth=("shotloom", a.password) if a.password else None)
+        auth=("shotloom", a.password) if a.password else None, app_kwargs=app_kwargs)
 
 
 if __name__ == "__main__":
