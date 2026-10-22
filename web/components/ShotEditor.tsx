@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { loadSchema } from "@/lib/client-api";
-import { CUSTOM_KEY, MODELS, findModel } from "@/lib/models";
+import { CUSTOM_KEY, MODELS, SPACE_KEY, findModel, providerOf } from "@/lib/models";
 import { autoValues, buildInput, chooseEndpoint } from "@/lib/plan";
 import { CAMERA, type CameraKey } from "@/lib/presets";
 import { endImageField, fallbackSchema, referenceImagesField, type ModelSchema } from "@/lib/schema";
@@ -15,15 +15,17 @@ export interface GeneratePlan {
   modelName: string;
   input: Record<string, unknown>;
   prompt: string;
+  /** which kind of endpoint was picked, so the runner reads the same schema */
+  mode: "text" | "image";
 }
 
-function useSchema(endpoint: string | undefined, imageField?: string) {
+function useSchema(endpoint: string | undefined, mode: "text" | "image", imageField?: string) {
   const [state, setState] = useState<{ endpoint?: string; schema?: ModelSchema; error?: string }>({});
   useEffect(() => {
     if (!endpoint) return;
     let alive = true;
     setState((s) => (s.endpoint === endpoint ? s : { endpoint }));
-    loadSchema(endpoint)
+    loadSchema(endpoint, mode)
       .then((schema) => alive && setState({ endpoint, schema }))
       .catch((e: Error & { status?: number }) => {
         if (!alive) return;
@@ -34,7 +36,7 @@ function useSchema(endpoint: string | undefined, imageField?: string) {
     return () => {
       alive = false;
     };
-  }, [endpoint, imageField]);
+  }, [endpoint, mode, imageField]);
   return state.endpoint === endpoint ? state : {};
 }
 
@@ -57,8 +59,10 @@ export function ShotEditor({
 }) {
   const [count, setCount] = useState(1);
   const choice = chooseEndpoint(shot);
-  const { schema, error: schemaError } = useSchema(choice.endpoint, choice.imageField);
+  const callMode: "text" | "image" = choice.mode === "image" ? "image" : "text";
+  const { schema, error: schemaError } = useSchema(choice.endpoint, callMode, choice.imageField);
   const model = findModel(shot.modelKey);
+  const free = providerOf(choice.endpoint) === "hf";
 
   const built = useMemo(() => (schema ? buildInput(schema, project, shot) : undefined), [schema, project, shot]);
   const auto = useMemo(() => autoValues(schema, project, shot), [schema, project, shot]);
@@ -68,7 +72,12 @@ export function ShotEditor({
   const textOnly = model ? !model.endpoints.image && !model.endpoints.reference : false;
 
   const problems = [choice.error, !choice.error && !schema && schemaError, ...(built?.errors ?? [])].filter(Boolean) as string[];
-  const canGenerate = ready && !!schema && !!choice.endpoint && problems.length === 0;
+  const canGenerate = (ready || free) && !!schema && !!choice.endpoint && problems.length === 0;
+
+  const plan = (): GeneratePlan | undefined =>
+    built && choice.endpoint
+      ? { endpoint: choice.endpoint, modelName: choice.modelName, input: built.input, prompt: built.prompt, mode: callMode }
+      : undefined;
 
   function setCamera(key: CameraKey, value: string | undefined) {
     onChange({ camera: { ...shot.camera, [key]: value } });
@@ -95,8 +104,9 @@ export function ShotEditor({
           placeholder="Describe the shot: who or what, the action, the setting. Add dialogue in quotes if the model makes sound."
           rows={5}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canGenerate && built && choice.endpoint) {
-              onGenerate({ endpoint: choice.endpoint, modelName: choice.modelName, input: built.input, prompt: built.prompt }, count);
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canGenerate) {
+              const p = plan();
+              if (p) onGenerate(p, count);
             }
           }}
         />
@@ -152,17 +162,45 @@ export function ShotEditor({
       <aside className="editor__side">
         <label className="field">
           <span className="field__label">Model</span>
-          <select value={shot.modelKey} onChange={(e) => onChange({ modelKey: e.target.value, params: {} })}>
-            {MODELS.map((m) => (
-              <option key={m.key} value={m.key}>
-                {m.name} · {m.maker}
-              </option>
-            ))}
-            <option value={CUSTOM_KEY}>Custom fal endpoint…</option>
+          <select value={shot.modelKey} onChange={(e) => onChange({ modelKey: e.target.value, params: {}, customEndpoint: undefined })}>
+            <optgroup label="Free — Hugging Face Spaces">
+              {MODELS.filter((m) => m.free).map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.name} · {m.maker}
+                </option>
+              ))}
+              <option value={SPACE_KEY}>Any Hugging Face Space…</option>
+            </optgroup>
+            <optgroup label="Paid — fal.ai (your key)">
+              {MODELS.filter((m) => !m.free).map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.name} · {m.maker}
+                </option>
+              ))}
+              <option value={CUSTOM_KEY}>Custom fal endpoint…</option>
+            </optgroup>
           </select>
         </label>
 
-        {shot.modelKey === CUSTOM_KEY ? (
+        {shot.modelKey === SPACE_KEY ? (
+          <label className="field">
+            <span className="field__label">Space</span>
+            <input
+              className="mono"
+              value={shot.customEndpoint ?? ""}
+              onChange={(e) => onChange({ customEndpoint: e.target.value, params: {} })}
+              placeholder="e.g. Lightricks/ltx-video-distilled"
+              spellCheck={false}
+            />
+            <span className="field__hint">
+              Any running video Space from{" "}
+              <a href="https://huggingface.co/spaces?category=video-generation" target="_blank" rel="noreferrer">
+                huggingface.co/spaces
+              </a>
+              . Shotloom reads its API and builds the settings below. Free, on your Hugging Face GPU quota.
+            </span>
+          </label>
+        ) : shot.modelKey === CUSTOM_KEY ? (
           <label className="field">
             <span className="field__label">Endpoint ID</span>
             <input
@@ -225,7 +263,7 @@ export function ShotEditor({
 
         <div className="generate">
           {problems.length ? <p className="problem">{problems[0]}</p> : null}
-          {!ready ? (
+          {!ready && !free ? (
             <button className="btn btn--primary btn--big" onClick={onOpenSettings}>
               <Icon name="key" /> Add fal key to generate
             </button>
@@ -243,17 +281,21 @@ export function ShotEditor({
               <button
                 className="btn btn--primary btn--big"
                 disabled={!canGenerate}
-                onClick={() =>
-                  built &&
-                  choice.endpoint &&
-                  onGenerate({ endpoint: choice.endpoint, modelName: choice.modelName, input: built.input, prompt: built.prompt }, count)
-                }
+                onClick={() => {
+                  const p = plan();
+                  if (p) onGenerate(p, count);
+                }}
               >
                 <Icon name="spark" /> Generate {count > 1 ? `${count} takes` : "take"}
               </button>
             </div>
           )}
-          <p className="dim small">Ctrl/⌘ + Enter in the prompt also generates. Each take is billed by fal.</p>
+          <p className="dim small">
+            Ctrl/⌘ + Enter in the prompt also generates.{" "}
+            {free
+              ? "This model is free: each take spends a little of your daily Hugging Face GPU quota."
+              : "Each take is billed by fal."}
+          </p>
         </div>
       </aside>
     </section>

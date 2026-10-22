@@ -107,8 +107,8 @@ export function TopBar({
         </label>
       </div>
 
-      <button className={"btn btn--sm" + (ready ? "" : " btn--attention")} onClick={onSettings}>
-        <Icon name={ready ? "gear" : "key"} size={14} /> {ready ? "Settings" : "Add fal key"}
+      <button className="btn btn--sm" onClick={onSettings} title={ready ? "Keys and studio settings" : "Free models need no key - add one here for the paid models"}>
+        <Icon name="gear" size={14} /> Settings
       </button>
     </header>
   );

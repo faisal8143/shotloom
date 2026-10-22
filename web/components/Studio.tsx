@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, credentials, serverHasKey } from "@/lib/client-api";
 import { downloadClip, grabFrame, slug } from "@/lib/media";
+import { isHfEndpoint } from "@/lib/hf";
 import { MODELS } from "@/lib/models";
 import { follow, runTake, type TakeRef } from "@/lib/runner";
 import { deleteProject, flushSaves, loadProjects, saveProject } from "@/lib/store";
@@ -17,7 +18,7 @@ import { TopBar } from "./TopBar";
 
 const LAST_PROJECT = "shotloom.lastProject";
 // exact inputs of takes sent in this session, so "Try again" can resend them (images aren't stored on takes)
-const sentInputs = new Map<string, { endpoint: string; input: Record<string, unknown> }>();
+const sentInputs = new Map<string, { endpoint: string; input: Record<string, unknown>; mode: "text" | "image" }>();
 
 function newShot(from?: Partial<Shot>): Shot {
   return {
@@ -72,7 +73,6 @@ export default function Studio() {
       setShotId(current.shots[0]?.id);
       setServerKey(hasServerKey);
       setReady(credentials.ready);
-      if (!credentials.ready) setDialog("settings");
     })();
     const onHide = () => flushSaves();
     window.addEventListener("pagehide", onHide);
@@ -130,7 +130,14 @@ export default function Studio() {
       for (const s of p.shots) {
         for (const t of s.takes) {
           const ref = { projectId: p.id, shotId: s.id, takeId: t.id };
-          if ((t.status === "queued" || t.status === "running") && t.statusUrl && t.responseUrl) {
+          if (isHfEndpoint(t.endpoint) && t.status !== "done" && t.status !== "failed") {
+            // a Space is followed over one open connection, which the closed tab ended
+            updateTake(ref, {
+              status: "failed",
+              error: "The page closed while the Space was rendering. Press Try again.",
+              finishedAt: Date.now(),
+            });
+          } else if ((t.status === "queued" || t.status === "running") && t.statusUrl && t.responseUrl) {
             follow(ref, t.statusUrl, t.responseUrl, t.createdAt, updateTake);
           } else if (t.status === "submitting") {
             updateTake(ref, { status: "failed", error: "The page closed before this reached fal. Try again." });
@@ -196,8 +203,8 @@ export default function Studio() {
       const input = { ...plan.input };
       // several takes of the same shot should differ: let fal pick each seed
       if (count > 1) delete input.seed;
-      sentInputs.set(t.id, { endpoint: plan.endpoint, input });
-      runTake({ projectId: pid, shotId: target.id, takeId: t.id }, plan.endpoint, input, updateTake);
+      sentInputs.set(t.id, { endpoint: plan.endpoint, input, mode: plan.mode });
+      runTake({ projectId: pid, shotId: target.id, takeId: t.id }, plan.endpoint, input, updateTake, plan.mode);
     }
   }
 
@@ -334,6 +341,11 @@ export default function Studio() {
                         })
                       }
                       onCancel={async () => {
+                        if (isHfEndpoint(t.endpoint)) {
+                          const { cancelHfTake } = await import("@/lib/hf-client");
+                          if (!cancelHfTake(t.id)) updateTake(ref, { status: "failed", error: "Cancelled." });
+                          return;
+                        }
                         try {
                           await api.cancel(t.responseUrl!);
                           updateTake(ref, { status: "failed", error: "Cancelled." });
@@ -352,7 +364,7 @@ export default function Studio() {
                           statusUrl: undefined,
                           responseUrl: undefined,
                         });
-                        runTake(ref, sent.endpoint, sent.input, updateTake);
+                        runTake(ref, sent.endpoint, sent.input, updateTake, sent.mode);
                       }}
                       onDuration={(d) => updateTake(ref, { duration: d })}
                     />
