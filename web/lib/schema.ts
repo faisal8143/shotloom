@@ -38,6 +38,19 @@ export interface ModelSchema {
   fields: Field[];
   /** true when the real schema could not be loaded and a minimal guess is used */
   fallback?: boolean;
+  /** "fal" (paid, queue API) or "hf" (free, a Hugging Face Space) */
+  provider?: "fal" | "hf";
+  // --- Hugging Face Spaces only ---
+  /** owner/space the schema came from */
+  space?: string;
+  /** the Space endpoint the studio will call, e.g. "/text_to_video" */
+  apiName?: string;
+  /** parameter names in the order the Space expects them */
+  order?: string[];
+  /** each parameter's own default, used for anything the studio doesn't set */
+  defaults?: Record<string, unknown>;
+  /** values the studio pins (the Space's own task/mode switch) */
+  fixed?: Record<string, unknown>;
 }
 
 type Json = Record<string, any>;

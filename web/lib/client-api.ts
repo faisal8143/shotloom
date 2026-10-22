@@ -1,8 +1,10 @@
 "use client";
+import { isHfEndpoint } from "./hf";
 import type { ModelSchema } from "./schema";
 
 const KEY_STORE = "shotloom.falKey";
 const PASS_STORE = "shotloom.studioPass";
+const HF_STORE = "shotloom.hfToken";
 
 function read(name: string): string {
   try {
@@ -22,6 +24,7 @@ function write(name: string, value: string) {
 
 let memoryKey = "";
 let memoryPass = "";
+let memoryHf = "";
 
 export const credentials = {
   get key() {
@@ -30,12 +33,19 @@ export const credentials = {
   get pass() {
     return memoryPass || read(PASS_STORE);
   },
-  save(key: string, pass: string) {
+  /** optional: a Hugging Face token, for a bigger free daily GPU allowance */
+  get hfToken() {
+    return memoryHf || read(HF_STORE);
+  },
+  save(key: string, pass: string, hfToken = memoryHf || read(HF_STORE)) {
     memoryKey = key.trim();
     memoryPass = pass;
+    memoryHf = hfToken.trim();
     write(KEY_STORE, memoryKey);
     write(PASS_STORE, memoryPass);
+    write(HF_STORE, memoryHf);
   },
+  /** ready to use the paid fal models */
   get ready() {
     return Boolean(this.key || this.pass);
   },
@@ -91,16 +101,20 @@ export const api = {
 
 const schemaCache = new Map<string, Promise<ModelSchema>>();
 
-export function loadSchema(endpoint: string): Promise<ModelSchema> {
-  let p = schemaCache.get(endpoint);
+export function loadSchema(endpoint: string, mode: "text" | "image" = "text"): Promise<ModelSchema> {
+  const cacheKey = isHfEndpoint(endpoint) ? `${endpoint}|${mode}` : endpoint;
+  let p = schemaCache.get(cacheKey);
   if (!p) {
-    p = fetch("/api/fal/schema?endpoint=" + encodeURIComponent(endpoint)).then(async (res) => {
+    const url = isHfEndpoint(endpoint)
+      ? `/api/hf/schema?endpoint=${encodeURIComponent(endpoint)}&mode=${mode}`
+      : "/api/fal/schema?endpoint=" + encodeURIComponent(endpoint);
+    p = fetch(url).then(async (res) => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new ApiError(res.status, (data as any).error || "Could not load model settings");
       return data as ModelSchema;
     });
-    p.catch(() => schemaCache.delete(endpoint)); // allow retry
-    schemaCache.set(endpoint, p);
+    p.catch(() => schemaCache.delete(cacheKey)); // allow retry
+    schemaCache.set(cacheKey, p);
   }
   return p;
 }

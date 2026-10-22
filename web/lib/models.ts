@@ -1,6 +1,14 @@
-// Curated fal.ai video models. Endpoint IDs were checked against fal's docs in
-// October 2026. Any other fal model can be used through "Custom endpoint" -
-// the studio reads its parameters from fal's OpenAPI schema either way.
+// The model catalog. Two kinds of entry:
+//
+//   free - a Hugging Face Space running open weights. No card, no fal key; it
+//          spends the daily ZeroGPU quota of whoever is using the studio.
+//   fal  - a hosted model on fal.ai, billed per second to the visitor's own key.
+//
+// fal endpoint IDs were checked against fal's docs in October 2026, Space IDs in
+// October 2026 too. Any other fal model or Space can be used through the two
+// "Custom" entries - the studio reads parameters from the model's own schema
+// either way (fal's OpenAPI document, or a Space's /gradio_api/info).
+import { HF_PREFIX, hfEndpoint, isHfEndpoint } from "./hf.ts";
 
 export type Mode = "text" | "image" | "reference";
 
@@ -14,9 +22,44 @@ export interface ModelDef {
   endpoints: Partial<Record<Mode, string>>;
   /** start-frame field name, used only if the schema can't be loaded */
   imageField?: string;
+  /** runs on a free Hugging Face Space rather than on fal */
+  free?: boolean;
+}
+
+export type Provider = "fal" | "hf";
+
+export function providerOf(endpoint: string | undefined): Provider {
+  return endpoint && isHfEndpoint(endpoint) ? "hf" : "fal";
 }
 
 export const MODELS: ModelDef[] = [
+  {
+    key: "ltx-free",
+    name: "LTX Video (free)",
+    maker: "Lightricks · Hugging Face",
+    blurb:
+      "Open weights running on a free Hugging Face Space. No key and no card - it uses your daily Hugging Face GPU quota instead (about 5 minutes a day signed in, 2 signed out).",
+    price: "Free",
+    free: true,
+    endpoints: {
+      text: hfEndpoint("Lightricks/ltx-video-distilled", "/text_to_video"),
+      image: hfEndpoint("Lightricks/ltx-video-distilled", "/image_to_video"),
+    },
+    imageField: "input_image_filepath",
+  },
+  {
+    key: "ltx-free-alt",
+    name: "LTX Video (free, mirror)",
+    maker: "DeepRat · Hugging Face",
+    blurb: "Same model on a second Space. Use it when the first one is busy or out of quota.",
+    price: "Free",
+    free: true,
+    endpoints: {
+      text: hfEndpoint("DeepRat/LTX-Video-ZeroGPU-Optimized", "/text_to_video"),
+      image: hfEndpoint("DeepRat/LTX-Video-ZeroGPU-Optimized", "/image_to_video"),
+    },
+    imageField: "input_image_filepath",
+  },
   {
     key: "veo31-fast",
     name: "Veo 3.1 Fast",
@@ -105,6 +148,7 @@ export const MODELS: ModelDef[] = [
 ];
 
 export const CUSTOM_KEY = "custom";
+export const SPACE_KEY = "custom-space";
 
 export function findModel(key: string): ModelDef | undefined {
   return MODELS.find((m) => m.key === key);
@@ -124,6 +168,8 @@ export function pickEndpoint(
   if (model.endpoints.reference && has.references) return { mode: "reference", endpoint: model.endpoints.reference };
   return { error: `${model.name} needs a start frame.` };
 }
+
+export { HF_PREFIX };
 
 const ENDPOINT_RE = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*){1,6}$/i;
 

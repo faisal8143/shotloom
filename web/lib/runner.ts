@@ -1,5 +1,6 @@
 "use client";
-import { ApiError, api } from "./client-api";
+import { ApiError, api, loadSchema } from "./client-api";
+import { isHfEndpoint } from "./hf";
 import type { Take } from "./types";
 
 export type TakeRef = { projectId: string; shotId: string; takeId: string };
@@ -15,13 +16,23 @@ function friendly(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Sends a take to fal and follows it until the video is ready. */
+/** Sends a take to fal, or to a free Hugging Face Space, and follows it. */
 export async function runTake(
   ref: TakeRef,
   endpoint: string,
   input: Record<string, unknown>,
   update: TakeUpdater,
+  mode: "text" | "image" = "text",
 ) {
+  if (isHfEndpoint(endpoint)) {
+    try {
+      const [{ runHfTake }, schema] = await Promise.all([import("./hf-client"), loadSchema(endpoint, mode)]);
+      await runHfTake(ref, schema, input, update);
+    } catch (err) {
+      update(ref, { status: "failed", error: friendly(err), finishedAt: Date.now() });
+    }
+    return;
+  }
   try {
     const sub = await api.submit(endpoint, input);
     update(ref, {
