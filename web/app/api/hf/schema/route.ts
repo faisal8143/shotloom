@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     const info = await res.json();
     const api = target.api || pickSpaceApi(info, want);
     if (!api) {
-      return Response.json({ error: "That Space doesn't expose a video endpoint Shotloom can call." }, { status: 404 });
+      return Response.json({ error: "That Space doesn't expose a video endpoint Shotflow can call." }, { status: 404 });
     }
     const schema = parseGradioInfo(info, target.space, api);
     return Response.json(schema, { headers: { "Cache-Control": "public, max-age=300, s-maxage=1800" } });

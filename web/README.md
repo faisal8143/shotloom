@@ -1,6 +1,8 @@
-# Shotloom Web
+# Shotflow
 
-A Google-Flow-style AI video studio that runs in the browser. Write a shot, pick a model, get takes, extend from the last frame, arrange shots in a timeline and export one MP4.
+A Google-Flow-style AI video studio that runs in the browser: a sidebar (All media, Characters, Scenes, Library, Bin), a gallery of every clip you make, and one prompt box at the bottom. Describe a shot, press Enter, open a clip to extend it, add clips to a scene and export one MP4.
+
+Live: https://shotloom-gamma.vercel.app (Shotflow is the web app of the [Shotloom](../README.md) project).
 
 Generation runs one of two ways, switched by the Model dropdown:
 
@@ -20,9 +22,9 @@ Generation runs one of two ways, switched by the Model dropdown:
 | LTX-2 Fast | Lightricks | text |
 | **Any other fal video model** | — | paste its endpoint ID under *Custom* |
 
-Shotloom reads each model's parameters from fal's own OpenAPI schema, so new models and new options appear without code changes.
+Shotflow reads each model's parameters from fal's own OpenAPI schema, so new models and new options appear without code changes.
 
-Shotloom reads a Space's parameters from its own `/gradio_api/info`, the same way it reads fal models from fal's OpenAPI schema, so any running video Space can be driven without code changes. The studio in the repo root is a Gradio app too, which is why the same code can drive your own GPU.
+Shotflow reads a Space's parameters from its own `/gradio_api/info`, the same way it reads fal models from fal's OpenAPI schema, so any running video Space can be driven without code changes. The studio in the repo root is a Gradio app too, which is why the same code can drive your own GPU.
 
 ### Unlimited: run the model on your own GPU
 
@@ -30,21 +32,20 @@ Nothing here trains a model - Wan 2.2 and LTX are open weights, already trained.
 
 1. Open `notebooks/shotloom_kaggle.ipynb` on [Kaggle](https://www.kaggle.com/code) (free T4 x2, ~30 hours a week), keep `WEB_APP = True`, and run it.
 2. It prints a `https://….gradio.live` link.
-3. In Shotloom Web: **Model → Any Space, or your own GPU…** and paste that link.
+3. In Shotflow: open the **model pill → Any Space, or your own GPU…**, then paste that link in the **settings** popover.
 
 Generation now runs on that GPU: no daily quota, no per-second billing. The same works for Colab, a rented GPU, or a PC with an NVIDIA card - anything that can run `python app.py --share`.
 
-Two things to know: the share link is public while the session runs (so stop the session when you are done), and the studio must allow the browser to call it. `--share` opens its API to any origin for exactly this reason; running it locally instead, pass `--allow-origin https://your-shotloom-site`.
+Two things to know: the share link is public while the session runs (so stop the session when you are done), and the studio must allow the browser to call it. `--share` opens its API to any origin for exactly this reason; running it locally instead, pass `--allow-origin https://your-shotflow-site`.
 
 ## Features
 
-- **Projects → shots → takes**, saved in your browser (IndexedDB). No account, no database.
-- **Start frame, end frame, ingredients** (drop, paste or click to add images).
-- **Camera presets**: shot size, movement, lens, lighting. **Project look** applied to every prompt.
-- **1–4 takes per click**, queue position and live render status, cancel, try again.
-- **Extend**: new shot that starts from a take's last frame. **Frame**: start a new shot from any paused frame.
-- **Scenebuilder timeline**, *Play film* preview, and **Export MP4**: joins the chosen takes in the browser with ffmpeg.wasm (mixed resolutions and missing audio are normalised automatically).
-- Takes still rendering when you close the tab resume when you come back.
+- **Flow-style layout**: sidebar, prompt search, a grid of every clip (hover to play), and a prompt box with **+** (start frame, end frame, ingredients, characters), a **model pill**, a **settings** popover (aspect ratio, 1–4 outputs, camera moves, project look, every model setting) and **send**.
+- **Viewer**: open any clip to watch it, *Add to scene*, *Extend* from its last frame, *Use this frame*, *Reuse prompt*, download or delete; arrow keys step through clips.
+- **Scenes**: plays your scene clip after clip, reorder or remove clips, **Export MP4** (joined in the browser with ffmpeg.wasm; mixed resolutions and missing audio are normalised). Extended clips join the scene right after the clip they continue.
+- **Characters**: save reference images once and drop them into any prompt.
+- **Library** of projects, and a **Bin** with restore.
+- Everything is saved in your browser (IndexedDB). No account, no database. Clips still rendering when you close the tab resume when you come back (fal models).
 
 ## Deploy free on Vercel
 

@@ -22,6 +22,8 @@ export interface Take {
   /** seconds, read from the video once it loads */
   duration?: number;
   finishedAt?: number;
+  /** moved to the Bin */
+  deleted?: boolean;
 }
 
 export interface CameraChoice {
@@ -45,7 +47,17 @@ export interface Shot {
   endFrame?: string;
   references: string[];
   takes: Take[];
+  /** legacy: the take a shot contributed to the film before scenes existed */
   selectedTakeId?: string;
+  /** set by Extend: a finished take of this generation lands right after that clip in the scene */
+  afterTakeId?: string;
+}
+
+export interface Character {
+  id: string;
+  name: string;
+  /** compressed JPEG data URL */
+  image: string;
 }
 
 export interface Project {
@@ -54,7 +66,13 @@ export interface Project {
   aspect: Aspect;
   /** style text appended to every prompt in the project */
   look: string;
+  /** every generation, oldest first; each holds the takes it produced */
   shots: Shot[];
+  /** what the composer currently holds */
+  draft?: Shot;
+  /** take ids, in film order */
+  scene?: string[];
+  characters?: Character[];
   createdAt: number;
   updatedAt: number;
 }

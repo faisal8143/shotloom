@@ -11,7 +11,7 @@ Powered by [Wan 2.2](https://github.com/Wan-Video/Wan2.2) (Apache-2.0) through �
 
 ## Two ways to run it
 
-| | **Python studio** (this folder) | **[Shotloom Web](web/)** |
+| | **Python studio** (this folder) | **[Shotflow — web app](web/)** |
 |---|---|---|
 | Models | Wan 2.2, open weights | free Hugging Face Spaces, **this studio on your own GPU**, or any fal.ai model (Veo 3.1, Seedance 2.0, Kling 3.0, FLUX 3, LTX-2) |
 | Runs on | free Kaggle T4 x2, or your own GPU | any browser; renders happen wherever you point it |
@@ -25,7 +25,7 @@ See **[web/README.md](web/README.md)** for the web app.
 ### Browser timeline, your own GPU, no limits
 
 The two halves join up: run this studio with `--share` (the Kaggle notebook does it for you, with `WEB_APP = True`)
-and paste the `gradio.live` link into Shotloom Web under **Model → Any Space, or your own GPU…**. The browser keeps
+and paste the `gradio.live` link into Shotflow (model pill → **Any Space, or your own GPU…**). The browser keeps
 the projects, shots, takes and MP4 export; the rendering happens on your free Kaggle GPU. No daily quota and nothing
 to pay - the only budget is GPU hours, about 30 a week on Kaggle.
 
