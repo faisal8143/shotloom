@@ -566,7 +566,6 @@ export default function Studio() {
                 setDialog("settings");
               }}
               onAspect={(aspect) => mutate(pid, (p) => ({ ...p, aspect }))}
-              onLook={(look) => mutate(pid, (p) => ({ ...p, look }))}
               onNotice={setToast}
             />
             <p className="composer-dock__note">Shotflow can make mistakes, so double-check it. Clips are saved in this browser.</p>
@@ -638,8 +637,7 @@ export default function Studio() {
               <strong>Scenes</strong> plays your clips in order. Reorder them there and <em>Export MP4</em> to get one video.
             </li>
             <li>
-              The <strong>sliders</strong> button holds aspect ratio, outputs per prompt, camera moves, the project look and
-              every setting the model offers.
+              The <strong>sliders</strong> button sets the aspect ratio and how many videos each prompt makes.
             </li>
           </ol>
         </Modal>

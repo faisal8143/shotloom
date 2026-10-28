@@ -1,15 +1,12 @@
 "use client";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { loadSchema } from "@/lib/client-api";
-import { aspectField } from "@/lib/hf";
 import { compressImage } from "@/lib/media";
 import { CUSTOM_KEY, MODELS, SPACE_KEY, findModel, providerOf } from "@/lib/models";
-import { autoValues, buildInput, chooseEndpoint } from "@/lib/plan";
-import { CAMERA, LOOKS, type CameraKey } from "@/lib/presets";
+import { buildInput, chooseEndpoint } from "@/lib/plan";
 import { endImageField, fallbackSchema, referenceImagesField, type ModelSchema } from "@/lib/schema";
 import type { Aspect, Character, Project, Shot } from "@/lib/types";
 import { Icon } from "./Icon";
-import { ParamControls } from "./ParamControls";
 import { MenuItem, Popover } from "./Popover";
 
 export interface GeneratePlan {
@@ -64,10 +61,9 @@ export const Composer = forwardRef<
     onGenerate: (plan: GeneratePlan, count: number) => void;
     onOpenSettings: () => void;
     onAspect: (a: Aspect) => void;
-    onLook: (text: string) => void;
     onNotice: (text: string) => void;
   }
->(function Composer({ project, draft, ready, extending, onChange, onGenerate, onOpenSettings, onAspect, onLook, onNotice }, ref) {
+>(function Composer({ project, draft, ready, extending, onChange, onGenerate, onOpenSettings, onAspect, onNotice }, ref) {
   const [count, setCount] = useState(1);
   const [expanded, setExpanded] = useState(false);
   const [tried, setTried] = useState(false);
@@ -81,8 +77,10 @@ export const Composer = forwardRef<
   const model = findModel(draft.modelKey);
   const free = providerOf(choice.endpoint) === "hf";
 
-  const built = useMemo(() => (schema ? buildInput(schema, project, draft) : undefined), [schema, project, draft]);
-  const auto = useMemo(() => autoValues(schema, project, draft), [schema, project, draft]);
+  // the settings panel is kept Flow-simple, so camera presets, look and per-model
+  // overrides saved by older versions are not applied: models use their defaults
+  const plain = useMemo(() => ({ ...draft, camera: {}, params: {} }), [draft]);
+  const built = useMemo(() => (schema ? buildInput(schema, { ...project, look: "" }, plain) : undefined), [schema, project, plain]);
 
   const supportsEnd = schema ? Boolean(endImageField(schema)) : false;
   const supportsRefs = model ? Boolean(model.endpoints.reference) : schema ? Boolean(referenceImagesField(schema)) : false;
@@ -160,9 +158,6 @@ export const Composer = forwardRef<
     }),
   );
 
-  const aspectName = schema && free ? aspectField(schema)?.name : undefined;
-  const camCount = (Object.keys(CAMERA) as CameraKey[]).filter((k) => draft.camera[k]).length;
-  const lookPreset = LOOKS.find((l) => l.text === project.look);
   const showProblem = tried && !needsKey && problems[0];
 
   return (
@@ -331,8 +326,8 @@ export const Composer = forwardRef<
                 />
                 <span className="field__hint">
                   {draft.modelKey === SPACE_KEY
-                    ? "A running video Space, or the share link of your own Shotflow studio on Kaggle/Colab. Its settings load automatically."
-                    : "Any video model on fal.ai. Its settings load automatically."}
+                    ? "A running video Space, or the share link of your own Shotflow studio on Kaggle/Colab."
+                    : "Any video model on fal.ai."}
                 </span>
               </label>
             ) : model ? (
@@ -363,72 +358,6 @@ export const Composer = forwardRef<
               </div>
             </div>
 
-            <div className="tune__group">
-              <span className="field__label">Camera {camCount ? `(${camCount})` : ""}</span>
-              <div className="tune__grid">
-                {(Object.keys(CAMERA) as CameraKey[]).map((key) => (
-                  <label key={key} className="param">
-                    <span className="param__label">{CAMERA[key].label}</span>
-                    <select value={draft.camera[key] ?? ""} onChange={(e) => onChange({ camera: { ...draft.camera, [key]: e.target.value || undefined } })}>
-                      <option value="">Auto</option>
-                      {CAMERA[key].options.map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <label className="param">
-              <span className="param__label">Project look (added to every prompt)</span>
-              <select
-                value={lookPreset ? lookPreset.name : "__custom"}
-                onChange={(e) => {
-                  const l = LOOKS.find((x) => x.name === e.target.value);
-                  if (l) onLook(l.text);
-                  else {
-                    const text = window.prompt("Describe the look for every shot in this project:", project.look);
-                    if (text != null) onLook(text);
-                  }
-                }}
-              >
-                {LOOKS.map((l) => (
-                  <option key={l.name}>{l.name}</option>
-                ))}
-                <option value="__custom">{lookPreset ? "Custom…" : `Custom: ${project.look.slice(0, 40)}`}</option>
-              </select>
-            </label>
-
-            {schema ? (
-              <div className="tune__group">
-                <span className="field__label">Model settings</span>
-                {schema.fallback ? <p className="warn">Couldn&apos;t load this model&apos;s full settings ({schemaError}).</p> : null}
-                <ParamControls
-                  // the aspect ratio is set once for the project, above
-                  fields={schema.fields.filter((f) => f.name !== "aspect_ratio" && f.name !== aspectName)}
-                  values={draft.params}
-                  autoValues={auto}
-                  onChange={(name, v) => {
-                    const params = { ...draft.params };
-                    if (v === undefined) delete params[name];
-                    else params[name] = v;
-                    onChange({ params });
-                  }}
-                />
-              </div>
-            ) : loading ? (
-              <p className="dim small">Loading model settings…</p>
-            ) : null}
-
-            {built?.prompt && draft.prompt.trim() ? (
-              <details className="tune__prompt">
-                <summary>Prompt that will be sent</summary>
-                <p>{built.prompt}</p>
-              </details>
-            ) : null}
             {built?.notes.length ? (
               <ul className="notes">
                 {built.notes.map((n) => (
