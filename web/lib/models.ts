@@ -61,6 +61,15 @@ export const MODELS: ModelDef[] = [
     imageField: "input_image_filepath",
   },
   {
+    key: "veo31-lite",
+    name: "Veo 3.1 Lite · Lower Priority",
+    maker: "Google",
+    blurb: "Flow's economy Veo tier: cheapest Veo, may wait longer in the queue. Native audio, 4–8 s.",
+    price: "≈ $0.03/s, $0.05/s with audio (720p)",
+    endpoints: { text: "fal-ai/veo3.1/lite", image: "fal-ai/veo3.1/lite/image-to-video" },
+    imageField: "image_url",
+  },
+  {
     key: "veo31-fast",
     name: "Veo 3.1 Fast",
     maker: "Google",

@@ -14,6 +14,7 @@ Generation runs one of two ways, switched by the Model dropdown:
 |---|---|---|
 | **LTX Video (free)** | Lightricks, on a HF Space | text, image |
 | **Any Space, or your own GPU (free)** | — | paste `owner/space` or `https://…gradio.live` |
+| Veo 3.1 Lite · Lower Priority | Google | text, image |
 | Veo 3.1 Fast | Google | text, image |
 | Veo 3.1 | Google | text, image, ingredients (reference images) |
 | Seedance 2.0 / 2.0 Mini | ByteDance | text, image (+ end frame) |
