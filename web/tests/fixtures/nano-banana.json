@@ -1,0 +1,113 @@
+{
+ "openapi": "3.0.4",
+ "info": {
+  "title": "google/nano-banana-2.1",
+  "version": "1"
+ },
+ "components": {
+  "schemas": {
+   "NanoBanana21Input": {
+    "type": "object",
+    "properties": {
+     "prompt": {
+      "type": "string"
+     },
+     "num_images": {
+      "type": "integer",
+      "default": 1,
+      "minimum": 1,
+      "maximum": 4
+     },
+     "seed": {
+      "type": "integer"
+     },
+     "aspect_ratio": {
+      "enum": [
+       "auto",
+       "21:9",
+       "16:9",
+       "3:2",
+       "4:3",
+       "5:4",
+       "1:1",
+       "4:5",
+       "3:4",
+       "2:3",
+       "9:16"
+      ],
+      "type": "string",
+      "default": "auto"
+     },
+     "output_format": {
+      "enum": [
+       "jpeg",
+       "png",
+       "webp"
+      ],
+      "type": "string",
+      "default": "png"
+     },
+     "resolution": {
+      "enum": [
+       "1K",
+       "2K",
+       "4K"
+      ],
+      "type": "string",
+      "default": "1K"
+     },
+     "thinking_level": {
+      "enum": [
+       "minimal",
+       "medium",
+       "high"
+      ],
+      "type": "string",
+      "default": "medium"
+     }
+    },
+    "required": [
+     "prompt"
+    ],
+    "x-fal-order-properties": [
+     "prompt",
+     "num_images",
+     "seed",
+     "aspect_ratio",
+     "output_format",
+     "resolution",
+     "thinking_level"
+    ]
+   },
+   "ImageSize": {
+    "type": "object",
+    "properties": {
+     "width": {
+      "type": "integer"
+     },
+     "height": {
+      "type": "integer"
+     }
+    }
+   }
+  }
+ },
+ "paths": {
+  "/google/nano-banana-2.1": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/NanoBanana21Input"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/google/nano-banana-2.1/requests/{request_id}": {
+   "get": {}
+  }
+ }
+}

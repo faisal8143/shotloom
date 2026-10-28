@@ -21,6 +21,7 @@ export const isWorking = (t: Take) => t.status === "submitting" || t.status === 
 
 export function statusText(t: Take) {
   if (t.status === "submitting") return "Sending…";
+  if (t.status === "running" && t.sourceTakeId) return t.modelName.split(" · ")[0] + "…";
   if (t.status === "queued") return t.queuePosition != null ? `In queue · #${t.queuePosition + 1}` : "In queue…";
   return "Generating…";
 }
@@ -32,12 +33,14 @@ export function MediaCard({
   inScene,
   onOpen,
   onDuration,
+  onFavorite,
 }: {
   take: Take;
   aspect: string;
   inScene: boolean;
   onOpen: () => void;
-  onDuration: (d: number) => void;
+  onDuration: (d: number, w: number, h: number) => void;
+  onFavorite?: () => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const working = isWorking(take);
@@ -69,10 +72,13 @@ export function MediaCard({
           playsInline
           preload="metadata"
           onLoadedMetadata={(e) => {
-            const d = e.currentTarget.duration;
-            if (Number.isFinite(d) && !take.duration) onDuration(d);
+            const v = e.currentTarget;
+            if (Number.isFinite(v.duration) && (!take.duration || !take.width)) onDuration(v.duration, v.videoWidth, v.videoHeight);
           }}
         />
+      ) : take.status === "done" && take.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={take.imageUrl} alt="" loading="lazy" />
       ) : working ? (
         <span className="tile__working">
           <span className="spinner" aria-hidden />
@@ -92,7 +98,35 @@ export function MediaCard({
           <span className="tile__meta">
             {take.modelName}
             {take.duration ? ` · ${take.duration.toFixed(1)}s` : ""}
+            {take.height ? ` · ${Math.min(take.width ?? take.height, take.height)}p` : ""}
           </span>
+        </span>
+      ) : null}
+      {take.kind === "image" && take.status === "done" ? (
+        <span className="tile__kind" title="Image">
+          <Icon name="image" size={13} />
+        </span>
+      ) : null}
+      {onFavorite && take.status === "done" ? (
+        <span
+          role="button"
+          tabIndex={0}
+          className={"tile__fav" + (take.favorite ? " is-on" : "")}
+          aria-label={take.favorite ? "Remove from favourites" : "Add to favourites"}
+          aria-pressed={Boolean(take.favorite)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFavorite();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onFavorite();
+            }
+          }}
+        >
+          <Icon name={take.favorite ? "heart_on" : "heart"} size={16} />
         </span>
       ) : null}
       {inScene ? (

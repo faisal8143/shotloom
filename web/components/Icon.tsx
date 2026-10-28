@@ -40,10 +40,16 @@ const PATHS: Record<string, string> = {
   undo: "M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3",
   frame: "M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M9 9h6v6H9z",
   scene_add: "M3 7h12v10H3zM19 9v6M16 12h6",
+  heart: "M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z",
+  heart_on: "M12 20s-7-4.4-7-10a4 4 0 017-2.6A4 4 0 0119 10c0 5.6-7 10-7 10z",
+  hd: "M3 6h18v12H3zM7 9v6M7 12h3M10 9v6M14 9v6h2a3 3 0 000-6h-2z",
+  sound: "M4 10v4h4l5 4V6L8 10H4zM16 9a4 4 0 010 6M18.5 6.5a7.5 7.5 0 010 11",
+  wand: "M4 20l10-10M14 6l1-2 1 2 2 1-2 1-1 2-1-2-2-1zM18 13l.6 1.4L20 15l-1.4.6L18 17l-.6-1.4L16 15l1.4-.6z",
+  animate: "M5 5h10v10H5zM19 9v10H9",
 };
 
 export function Icon({ name, size = 18, title }: { name: string; size?: number; title?: string }) {
-  const filled = name === "play";
+  const filled = name === "play" || name === "heart_on";
   const d = PATHS[name] ?? PATHS.spark;
   const dotty = name === "more";
   return (

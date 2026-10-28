@@ -21,9 +21,19 @@ export interface Take {
   seed?: number;
   /** seconds, read from the video once it loads */
   duration?: number;
+  /** pixel size, read from the video once it loads */
+  width?: number;
+  height?: number;
   finishedAt?: number;
   /** moved to the Bin */
   deleted?: boolean;
+  /** what this take produces; older takes are all video */
+  kind?: "video" | "image";
+  imageUrl?: string;
+  /** starred by the user */
+  favorite?: boolean;
+  /** for upscales, added sound and edits: the clip it was made from */
+  sourceTakeId?: string;
 }
 
 export interface CameraChoice {
@@ -51,6 +61,10 @@ export interface Shot {
   selectedTakeId?: string;
   /** set by Extend: a finished take of this generation lands right after that clip in the scene */
   afterTakeId?: string;
+  /** set by Upscale / Add sound / Edit: the finished take replaces that clip in the scene */
+  replaceTakeId?: string;
+  /** "image" for the Image mode of the prompt box */
+  kind?: "video" | "image";
 }
 
 export interface Character {

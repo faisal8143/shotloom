@@ -14,6 +14,7 @@ Generation runs one of two ways, switched by the Model dropdown:
 |---|---|---|
 | **LTX Video (free)** | Lightricks, on a HF Space | text, image |
 | **Any Space, or your own GPU (free)** | — | paste `owner/space` or `https://…gradio.live` |
+| MiniMax H3 Max | MiniMax | text, image (+ end frame) |
 | Veo 3.1 Lite · Lower Priority | Google | text, image |
 | Veo 3.1 Fast | Google | text, image |
 | Veo 3.1 | Google | text, image, ingredients (reference images) |
@@ -41,12 +42,19 @@ Two things to know: the share link is public while the session runs (so stop the
 
 ## Features
 
-- **Flow-style layout**: sidebar, prompt search, a grid of every clip (hover to play), and a prompt box with **+** (start frame, end frame, ingredients, characters), a **model pill**, a **settings** popover (aspect ratio, duration, resolution — HD 720p / FHD 1080p where the model offers it — and 1–4 outputs per prompt) and **send**.
-- **Viewer**: open any clip to watch it, *Add to scene*, *Extend* from its last frame, *Use this frame*, *Reuse prompt*, download or delete; arrow keys step through clips.
+- **Flow-style layout**: sidebar (All media, Characters, Scenes, Library, Bin), a day-grouped grid of every clip and image (hover to play, ♥ favourites, search and filters), and one prompt box at the bottom.
+- **Prompt box**: **+** (start frame, end frame, ingredients, characters), **Video / Image** switch, model pill with badges and prices, **✨ Enhance** (any language in, a detailed English prompt out), settings (aspect ratio, duration, resolution HD/FHD/4K where the model offers it, 1–4 outputs) and a **cost estimate** before you send.
+- **Images**: Nano Banana 2.1 (text-to-image and editing with reference images) and FLUX.1 schnell. Open an image to *Animate* it, *Edit* it, or save it as a *Character*.
+- **Viewer → Enhance** on any clip: **Upscale** to FHD 1080p / 2K / 4K (ByteDance Video Upscaler), **Add sound** (MMAudio), **Edit** with words (Kling O3). The new copy takes the old clip's place in your scene.
 - **Scenes**: plays your scene clip after clip, reorder or remove clips, **Export MP4** (joined in the browser with ffmpeg.wasm; mixed resolutions and missing audio are normalised). Extended clips join the scene right after the clip they continue.
-- **Characters**: save reference images once and drop them into any prompt.
-- **Library** of projects, and a **Bin** with restore.
-- Everything is saved in your browser (IndexedDB). No account, no database. Clips still rendering when you close the tab resume when you come back (fal models).
+- **Characters**, **Library** of projects, and a **Bin** with restore.
+- Everything is saved in your browser (IndexedDB). No account, no database.
+
+### Quality tips (from testing the models, Oct 2026)
+
+- Draft cheap, finish sharp: try ideas on LTX (free), FLUX 3 Draft or Veo 3.1 Lite, then re-render the keeper on MiniMax H3 Max, Veo 3.1 or Seedance 2.0 — or just **Upscale** it to FHD for under a cent per second.
+- MiniMax H3 Max is the best quality-per-dollar model on fal right now (top 3 on the Artificial Analysis board); Veo 3.1 is best for dialogue and Ingredients; Seedance 2.0 for cinematic motion.
+- Keep characters consistent by making them once as an image, saving them to Characters, and starting every clip from them.
 
 ## Deploy free on Vercel
 

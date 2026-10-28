@@ -28,11 +28,24 @@ export function durationLabel(v: unknown): string {
   return Number.isFinite(n) ? `${n}s` : String(v);
 }
 
-const RES_LABEL: Record<string, string> = { "480p": "SD", "540p": "SD", "720p": "HD", "1080p": "FHD", "1440p": "2K", "2160p": "4K", "4k": "4K" };
+const RES_LABEL: Record<string, string> = {
+  "480p": "SD",
+  "540p": "SD",
+  "720p": "HD",
+  "768p": "HD+",
+  "1080p": "FHD",
+  "1440p": "2K",
+  "2160p": "4K",
+  "1k": "1K",
+  "2k": "2K",
+  "4k": "4K",
+};
 
 export function resolutionLabel(v: unknown): string {
   const key = String(v).toLowerCase();
-  return RES_LABEL[key] ? `${RES_LABEL[key]} ${key === "4k" ? "" : key}`.trim() : String(v);
+  const short = RES_LABEL[key];
+  if (!short) return String(v);
+  return /p$/.test(key) ? `${short} ${key}` : short;
 }
 
 /** Keeps only the overrides the prompt box can show, and only valid ones. */

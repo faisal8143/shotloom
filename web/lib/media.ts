@@ -95,3 +95,20 @@ export function slug(text: string): string {
       .slice(0, 40) || "shot"
   );
 }
+
+/** Turns a generated image's URL into a compressed data URL the prompt box can hold. */
+export async function urlToDataUrl(url: string, maxSide = 1600): Promise<string> {
+  let blob: Blob | undefined;
+  try {
+    const res = await fetch(url, { mode: "cors" });
+    if (res.ok) blob = await res.blob();
+  } catch {
+    /* fall through to the proxy */
+  }
+  if (!blob) {
+    const res = await fetch("/api/media?url=" + encodeURIComponent(url));
+    if (!res.ok) throw new Error(`Couldn't load the image (${res.status}). It may have expired on fal.`);
+    blob = await res.blob();
+  }
+  return compressImage(blob, maxSide, 0.9);
+}

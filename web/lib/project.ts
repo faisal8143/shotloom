@@ -102,11 +102,20 @@ export function sceneClips(p: Project): MediaItem[] {
 
 /**
  * Called when a take finishes. A take made with Extend joins the scene right
- * after the clip it continues (once per generation).
+ * after the clip it continues (once per generation); an upscale, added sound or
+ * edit replaces its source clip in the scene.
  */
 export function placeFinishedTake(p: Project, shotId: string, takeId: string): Project {
   const shot = p.shots.find((s) => s.id === shotId);
   const scene = p.scene ?? [];
+  // an upscale / sound / edit takes the place of the clip it was made from
+  if (shot?.replaceTakeId) {
+    const at = scene.indexOf(shot.replaceTakeId);
+    if (at < 0 || scene.includes(takeId)) return p;
+    const next = [...scene];
+    next[at] = takeId;
+    return { ...p, scene: next };
+  }
   if (!shot?.afterTakeId || scene.includes(takeId)) return p;
   if (shot.takes.some((t) => t.id !== takeId && scene.includes(t.id))) return p;
   const at = scene.indexOf(shot.afterTakeId);
@@ -123,4 +132,27 @@ export function moveInScene(scene: string[], takeId: string, dir: -1 | 1): strin
   const next = [...scene];
   [next[i], next[j]] = [next[j], next[i]];
   return next;
+}
+
+export type DayGroup = { label: string; items: MediaItem[] };
+
+/** Groups media (newest first) into Today / Yesterday / dated sections, like Flow. */
+export function groupByDay(items: MediaItem[], now = new Date()): DayGroup[] {
+  const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const today = startOf(now);
+  const groups: DayGroup[] = [];
+  for (const m of items) {
+    const day = startOf(new Date(m.take.createdAt));
+    const diff = Math.round((today - day) / 86400000);
+    const label =
+      diff <= 0
+        ? "Today"
+        : diff === 1
+          ? "Yesterday"
+          : new Date(day).toLocaleDateString("en", { weekday: diff < 7 ? "long" : undefined, month: "short", day: "numeric" });
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.items.push(m);
+    else groups.push({ label, items: [m] });
+  }
+  return groups;
 }

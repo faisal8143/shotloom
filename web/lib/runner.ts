@@ -90,6 +90,7 @@ export async function follow(
           update(ref, {
             status: "done",
             videoUrl: res.videoUrl,
+            imageUrl: res.imageUrl,
             seed: res.seed,
             log: undefined,
             queuePosition: undefined,

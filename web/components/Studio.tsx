@@ -2,9 +2,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, credentials, serverHasKey } from "@/lib/client-api";
 import { isHfEndpoint } from "@/lib/hf";
-import { downloadClip, grabFrame, slug } from "@/lib/media";
+import { downloadClip, grabFrame, slug, urlToDataUrl } from "@/lib/media";
+import { findModel } from "@/lib/models";
 import {
   findTake,
+  groupByDay,
   mediaItems,
   moveInScene,
   newProject,
@@ -16,6 +18,7 @@ import {
 } from "@/lib/project";
 import { follow, runTake, type TakeRef } from "@/lib/runner";
 import { deleteProject, flushSaves, loadProjects, saveProject } from "@/lib/store";
+import { editRun, soundRun, upscaleRun, UPSCALE_LABEL, type ToolRun } from "@/lib/tools";
 import { uid, type Project, type Shot, type Take } from "@/lib/types";
 import { Composer, type ComposerHandle, type GeneratePlan } from "./Composer";
 import { CharactersView } from "./CharactersView";
@@ -35,7 +38,14 @@ const COLLAPSED = "shotflow.sidebarCollapsed";
 // exact inputs of takes sent in this session, so "Try again" can resend them (images aren't stored on takes)
 const sentInputs = new Map<string, { endpoint: string; input: Record<string, unknown>; mode: "text" | "image" }>();
 
-type Filter = "all" | "done" | "working" | "failed";
+type Filter = "all" | "videos" | "images" | "favorites" | "working" | "failed";
+
+const IDEAS = [
+  "A lighthouse on a cliff at night, waves crashing below, slow drone push-in, thunder and rain",
+  "Close-up of a chef plating a dish in a busy kitchen, steam rising, warm light, sizzling sounds",
+  "Ancient Egyptian market at golden hour, merchants and camels, tracking shot through the crowd",
+  "A cat in a tiny astronaut suit floating inside a space station, soft blue light, playful",
+];
 
 const TITLES: Record<View, string> = {
   media: "All media",
@@ -172,7 +182,9 @@ export default function Studio() {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return media.filter((m) => {
-      if (filter === "done" && m.take.status !== "done") return false;
+      if (filter === "videos" && m.take.kind === "image") return false;
+      if (filter === "images" && m.take.kind !== "image") return false;
+      if (filter === "favorites" && !m.take.favorite) return false;
       if (filter === "working" && !isWorking(m.take)) return false;
       if (filter === "failed" && m.take.status !== "failed") return false;
       return !q || m.take.prompt.toLowerCase().includes(q) || m.take.modelName.toLowerCase().includes(q);
@@ -191,6 +203,10 @@ export default function Studio() {
   }
 
   const pid = project.id;
+  const askKey = (why?: string) => {
+    if (why) setToast(why);
+    setDialog("settings");
+  };
   const draft = project.draft;
   const sceneIds = project.scene ?? [];
   const errorMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -209,8 +225,9 @@ export default function Studio() {
       prompt: plan.prompt,
       params: Object.fromEntries(Object.entries(plan.input).filter(([, v]) => typeof v !== "string" || !v.startsWith("data:"))),
       status: "submitting",
+      kind: plan.kind,
     }));
-    const record: Shot = { ...draft, id: uid("s_"), title: "", takes, params: { ...draft.params }, camera: { ...draft.camera }, references: [...draft.references] };
+    const record: Shot = { ...draft, kind: plan.kind, id: uid("s_"), title: "", takes, params: { ...draft.params }, camera: { ...draft.camera }, references: [...draft.references] };
     mutate(pid, (p) => ({ ...p, shots: [...p.shots, record], draft: { ...draft, afterTakeId: undefined } }));
     setView("media");
     setFilter("all");
@@ -222,6 +239,50 @@ export default function Studio() {
       if (count > 1) delete input.seed;
       sentInputs.set(t.id, { endpoint: plan.endpoint, input, mode: plan.mode });
       runTake({ projectId: pid, shotId: record.id, takeId: t.id }, plan.endpoint, input, updateTake, plan.mode);
+    }
+  }
+
+  /** Upscale / add sound / edit: a new clip made from an existing one. */
+  function runTool(source: MediaItem, run: ToolRun, notice: string) {
+    if (!ready) return askKey("Upscale, Add sound and Edit run on fal.ai and need your key.");
+    const take: Take = {
+      id: uid("t_"),
+      createdAt: Date.now(),
+      endpoint: run.endpoint,
+      modelName: run.label,
+      prompt: run.prompt,
+      params: {},
+      status: "submitting",
+      kind: "video",
+      sourceTakeId: source.take.id,
+    };
+    const record: Shot = newShot({
+      prompt: run.prompt,
+      modelKey: "tool",
+      takes: [take],
+      kind: "video",
+      replaceTakeId: sceneIds.includes(source.take.id) ? source.take.id : undefined,
+    });
+    mutate(pid, (p) => ({ ...p, shots: [...p.shots, record] }));
+    sentInputs.set(take.id, { endpoint: run.endpoint, input: run.input, mode: "text" });
+    runTake({ projectId: pid, shotId: record.id, takeId: take.id }, run.endpoint, run.input, updateTake, "text");
+    setViewer(undefined);
+    setView("media");
+    setFilter("all");
+    setToast(notice);
+  }
+
+  async function imageToDraft(item: MediaItem, patch: (img: string) => Partial<Shot>, notice: string) {
+    if (!item.take.imageUrl) return;
+    try {
+      const img = await urlToDataUrl(item.take.imageUrl);
+      patchDraft(patch(img));
+      setViewer(undefined);
+      setView("media");
+      setToast(notice);
+      requestAnimationFrame(() => composer.current?.focus());
+    } catch (e) {
+      setToast(errorMsg(e));
     }
   }
 
@@ -252,6 +313,7 @@ export default function Studio() {
   function reuse(item: MediaItem) {
     const s = item.shot;
     patchDraft({
+      kind: s.kind ?? (item.take.kind === "image" ? "image" : "video"),
       prompt: s.prompt,
       modelKey: s.modelKey,
       customEndpoint: s.customEndpoint,
@@ -270,6 +332,10 @@ export default function Studio() {
   function retry(item: MediaItem) {
     const ref = { projectId: pid, shotId: item.shot.id, takeId: item.take.id };
     const sent = sentInputs.get(item.take.id);
+    if (!sent && item.take.sourceTakeId) {
+      setToast("Open the original clip and run that tool again.");
+      return;
+    }
     if (!sent) {
       reuse(item);
       setToast("Prompt is back in the box. Press Enter to generate it again.");
@@ -412,8 +478,10 @@ export default function Studio() {
                 <div className="menu">
                   {(
                     [
-                      ["all", "All clips"],
-                      ["done", "Ready"],
+                      ["all", "Everything"],
+                      ["videos", "Videos"],
+                      ["images", "Images"],
+                      ["favorites", "Favourites"],
                       ["working", "Generating"],
                       ["failed", "Failed"],
                     ] as [Filter, string][]
@@ -446,16 +514,24 @@ export default function Studio() {
         <main className={"content" + (showComposer ? " content--composer" : "")}>
           {view === "media" ? (
             visible.length ? (
-              <div className={"grid grid--" + project.aspect.replace(":", "x")}>
-                {visible.map((m) => (
-                  <MediaCard
-                    key={m.take.id}
-                    take={m.take}
-                    aspect={project.aspect}
-                    inScene={sceneIds.includes(m.take.id)}
-                    onOpen={() => setViewer({ takeId: m.take.id, from: "media" })}
-                    onDuration={(d) => patchTakeIn(m.take.id, { duration: d })}
-                  />
+              <div className="days">
+                {groupByDay(visible).map((g) => (
+                  <section key={g.label} className="day" aria-label={g.label}>
+                    <h2 className="day__label">{g.label}</h2>
+                    <div className={"grid grid--" + project.aspect.replace(":", "x")}>
+                      {g.items.map((m) => (
+                        <MediaCard
+                          key={m.take.id}
+                          take={m.take}
+                          aspect={project.aspect}
+                          inScene={sceneIds.includes(m.take.id)}
+                          onOpen={() => setViewer({ takeId: m.take.id, from: "media" })}
+                          onDuration={(d, w, h) => patchTakeIn(m.take.id, { duration: d, width: w, height: h })}
+                          onFavorite={() => patchTakeIn(m.take.id, { favorite: !m.take.favorite })}
+                        />
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             ) : media.length ? (
@@ -471,8 +547,23 @@ export default function Studio() {
                 <Icon name="spark" size={48} />
                 <p className="empty__title">Start creating or drop media</p>
                 <p className="empty__text">
-                  Describe a shot below and press Enter. Drop an image here to animate it. The first two models are free.
+                  Describe a shot below and press Enter, or drop an image here to animate it. Write in any language and press
+                  <Icon name="spark" size={14} /> to turn it into a detailed prompt.
                 </p>
+                <div className="ideas">
+                  {IDEAS.map((idea) => (
+                    <button
+                      key={idea}
+                      className="idea"
+                      onClick={() => {
+                        patchDraft({ prompt: idea });
+                        requestAnimationFrame(() => composer.current?.focus());
+                      }}
+                    >
+                      {idea}
+                    </button>
+                  ))}
+                </div>
               </div>
             )
           ) : view === "scenes" ? (
@@ -561,10 +652,7 @@ export default function Studio() {
               extending={extendingLabel}
               onChange={patchDraft}
               onGenerate={generate}
-              onOpenSettings={() => {
-                setToast("This model runs on fal.ai and needs your key. The two LTX models are free.");
-                setDialog("settings");
-              }}
+              onOpenSettings={askKey}
               onAspect={(aspect) => mutate(pid, (p) => ({ ...p, aspect }))}
               onNotice={setToast}
             />
@@ -585,7 +673,39 @@ export default function Studio() {
           key={viewerItem.take.id}
           item={viewerItem}
           inScene={sceneIds.includes(viewerItem.take.id)}
+          ready={ready}
           actions={{
+            onFavorite: () => patchTakeIn(viewerItem.take.id, { favorite: !viewerItem.take.favorite }),
+            onUpscale: (t) =>
+              runTool(viewerItem, upscaleRun(viewerItem.take.videoUrl!, t, viewerItem.take.prompt), `Upscaling to ${UPSCALE_LABEL[t]}… the sharper copy will appear in All media.`),
+            onSound: (prompt) => runTool(viewerItem, soundRun(viewerItem.take.videoUrl!, prompt, viewerItem.take.duration), "Adding sound…"),
+            onEdit: (instruction) => runTool(viewerItem, editRun(viewerItem.take.videoUrl!, instruction), "Editing the clip…"),
+            onAnimate: () =>
+              imageToDraft(
+                viewerItem,
+                (img) => {
+                  const current = findModel(draft.modelKey);
+                  const videoModel = current && (current.kind ?? "video") === "video" && current.endpoints.image ? current.key : "ltx-free";
+                  return { kind: "video", modelKey: videoModel, startFrame: img, endFrame: undefined, afterTakeId: undefined, params: {}, prompt: "" };
+                },
+                "Image set as the start frame. Describe the motion and press Enter.",
+              ),
+            onEditImage: () =>
+              imageToDraft(
+                viewerItem,
+                (img) => ({ kind: "image", modelKey: "nano-banana-21", startFrame: undefined, references: [img], params: {}, prompt: "" }),
+                "Describe the change (e.g. make it night, change the outfit) and press Enter.",
+              ),
+            onSaveCharacter: async () => {
+              try {
+                const img = await urlToDataUrl(viewerItem.take.imageUrl!, 1280);
+                const name = viewerItem.shot.prompt.split(/[,.]/)[0].slice(0, 28) || "Character";
+                mutate(pid, (p) => ({ ...p, characters: [...(p.characters ?? []), { id: uid("c_"), name, image: img }] }));
+                setToast(`Saved to Characters as “${name}”.`);
+              } catch (e) {
+                setToast(errorMsg(e));
+              }
+            },
             onToggleScene: () => {
               toggleScene(viewerItem.take.id);
               setToast(sceneIds.includes(viewerItem.take.id) ? "Removed from scene." : "Added to scene.");
@@ -622,22 +742,27 @@ export default function Studio() {
         <Modal title="How Shotflow works" onClose={() => setDialog(null)}>
           <ol className="help">
             <li>
-              <strong>Describe a shot</strong> in the box at the bottom and press Enter. Pick the model from the pill next to
-              <strong> +</strong>. The two LTX models are free; the others use your fal.ai key (Settings).
+              <strong>Describe a shot</strong> at the bottom and press Enter. Write in any language (Roman Urdu too) and press{" "}
+              <strong>✨</strong> to turn it into a detailed English prompt.
             </li>
             <li>
-              <strong>Add images</strong> with <strong>+</strong>, or drop/paste one: a start frame is animated, an end frame is
-              where the shot lands, ingredients keep characters consistent (Veo 3.1).
+              <strong>Video or Image</strong>: switch next to <strong>+</strong>. Make a still with Nano Banana, then open it and
+              press <em>Animate</em>, or save it as a <em>Character</em>.
             </li>
             <li>
-              <strong>Open a clip</strong> to watch it, then <em>Add to scene</em>, <em>Extend</em> it from its last frame, or{" "}
-              <em>Use this frame</em> to branch off.
+              <strong>Pick a model</strong> from the pill. The LTX models are free; the others use your fal.ai key (Settings) and the
+              estimated price shows before you send.
             </li>
             <li>
-              <strong>Scenes</strong> plays your clips in order. Reorder them there and <em>Export MP4</em> to get one video.
+              The <strong>sliders</strong> set aspect ratio, duration, resolution (HD / FHD / 4K where the model has it) and how many
+              outputs each prompt makes.
             </li>
             <li>
-              The <strong>sliders</strong> button sets the aspect ratio and how many videos each prompt makes.
+              <strong>Open a clip</strong> to add it to the scene, <em>Extend</em> it, or use <em>Enhance</em>: Upscale to FHD/2K/4K,
+              Add sound, or Edit it with words.
+            </li>
+            <li>
+              <strong>Scenes</strong> plays your clips in order. Reorder them and <em>Export MP4</em> to get one video.
             </li>
           </ol>
         </Modal>

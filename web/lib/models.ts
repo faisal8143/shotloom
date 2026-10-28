@@ -24,6 +24,12 @@ export interface ModelDef {
   imageField?: string;
   /** runs on a free Hugging Face Space rather than on fal */
   free?: boolean;
+  /** what it makes; video when unset */
+  kind?: "video" | "image";
+  /** short label shown in the model picker */
+  badge?: string;
+  /** for models whose size knob isn't an aspect_ratio enum: parameter name + values per project aspect */
+  aspectParam?: { name: string; values: Record<string, string> };
 }
 
 export type Provider = "fal" | "hf";
@@ -41,6 +47,7 @@ export const MODELS: ModelDef[] = [
       "Open weights running on a free Hugging Face Space. No key and no card - it uses your daily Hugging Face GPU quota instead (about 5 minutes a day signed in, 2 signed out).",
     price: "Free",
     free: true,
+    badge: "Free",
     endpoints: {
       text: hfEndpoint("Lightricks/ltx-video-distilled", "/text_to_video"),
       image: hfEndpoint("Lightricks/ltx-video-distilled", "/image_to_video"),
@@ -61,9 +68,20 @@ export const MODELS: ModelDef[] = [
     imageField: "input_image_filepath",
   },
   {
+    key: "h3-max",
+    name: "MiniMax H3 Max",
+    maker: "MiniMax",
+    badge: "Best value",
+    blurb: "Top-3 on the Artificial Analysis video board (Sept 2026) at a fraction of Veo's price. Up to 15 s, 1080p, start + end frame.",
+    price: "≈ $0.05–0.10/s (768p–1080p, Oct promo)",
+    endpoints: { text: "minimax/h3-max/text-to-video", image: "minimax/h3-max/image-to-video" },
+    imageField: "image_url",
+  },
+  {
     key: "veo31-lite",
     name: "Veo 3.1 Lite · Lower Priority",
     maker: "Google",
+    badge: "Cheapest Veo",
     blurb: "Flow's economy Veo tier: cheapest Veo, may wait longer in the queue. Native audio, 4–8 s.",
     price: "≈ $0.03/s, $0.05/s with audio (720p)",
     endpoints: { text: "fal-ai/veo3.1/lite", image: "fal-ai/veo3.1/lite/image-to-video" },
@@ -82,6 +100,7 @@ export const MODELS: ModelDef[] = [
     key: "veo31",
     name: "Veo 3.1",
     maker: "Google",
+    badge: "Ingredients",
     blurb: "Flagship Veo. Best prompt-following and dialogue; ingredients mode keeps characters consistent.",
     price: "≈ $0.40/s with audio",
     endpoints: {
@@ -95,6 +114,7 @@ export const MODELS: ModelDef[] = [
     key: "seedance2",
     name: "Seedance 2.0",
     maker: "ByteDance",
+    badge: "Cinematic",
     blurb: "Cinematic motion, start + end frame control, synced audio, up to 15 s.",
     price: "≈ $0.30/s at 720p",
     endpoints: { text: "bytedance/seedance-2.0/text-to-video", image: "bytedance/seedance-2.0/image-to-video" },
@@ -105,6 +125,7 @@ export const MODELS: ModelDef[] = [
     name: "Seedance 2.0 Mini",
     maker: "ByteDance",
     blurb: "Faster, cheaper Seedance 2.0 - good for drafts.",
+    price: "≈ $0.07/s at 480p, $0.15/s at 720p",
     endpoints: {
       text: "bytedance/seedance-2.0/mini/text-to-video",
       image: "bytedance/seedance-2.0/mini/image-to-video",
@@ -128,6 +149,7 @@ export const MODELS: ModelDef[] = [
     name: "FLUX 3 Max",
     maker: "Black Forest Labs",
     blurb: "New (Oct 2026). Strong prompt adherence, low latency, start + end frame, 5–20 s, native audio.",
+    price: "≈ $0.04/s 720p, $0.07/s 1080p (promo to Nov 7)",
     endpoints: {
       text: "blackforestlabs/flux-3-max/text-to-video",
       image: "blackforestlabs/flux-3-max/image-to-video",
@@ -138,6 +160,7 @@ export const MODELS: ModelDef[] = [
     key: "flux3-draft",
     name: "FLUX 3 Draft",
     maker: "Black Forest Labs",
+    badge: "Drafts",
     blurb: "Fast 720p previews for blocking out shots before paying for a final render.",
     price: "≈ $0.06/s at 720p",
     endpoints: {
@@ -154,7 +177,37 @@ export const MODELS: ModelDef[] = [
     price: "≈ $0.04/s at 1080p",
     endpoints: { text: "fal-ai/ltx-2/text-to-video/fast" },
   },
+
+  // ---- images (start frames, characters, stills) ----
+  {
+    key: "nano-banana-21",
+    name: "Nano Banana 2.1",
+    maker: "Google",
+    kind: "image",
+    badge: "Best images",
+    blurb: "Google's image model, the one inside Flow's Images tab. Add reference images to edit them: change the outfit, the pose, the light.",
+    price: "≈ $0.04 per image (1K/2K)",
+    endpoints: { text: "google/nano-banana-2.1", reference: "google/nano-banana-2.1/edit" },
+  },
+  {
+    key: "flux-schnell",
+    name: "FLUX.1 schnell",
+    maker: "Black Forest Labs",
+    kind: "image",
+    badge: "Fast",
+    blurb: "Very fast, very cheap stills for trying ideas. Text only.",
+    price: "≈ $0.002 per image",
+    endpoints: { text: "fal-ai/flux/schnell" },
+    aspectParam: {
+      name: "image_size",
+      values: { "16:9": "landscape_16_9", "21:9": "landscape_16_9", "9:16": "portrait_16_9", "1:1": "square_hd" },
+    },
+  },
 ];
+
+export function modelsOfKind(kind: "video" | "image"): ModelDef[] {
+  return MODELS.filter((m) => (m.kind ?? "video") === kind);
+}
 
 export const CUSTOM_KEY = "custom";
 export const SPACE_KEY = "custom-space";

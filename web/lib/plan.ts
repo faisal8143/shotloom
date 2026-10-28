@@ -62,6 +62,11 @@ export function autoValues(schema: ModelSchema | undefined, project: Project, sh
     const ratio = matchAspect(aspectField(schema), project.aspect);
     return ratio ? { ...size, [aspectField(schema)!.name]: ratio } : size;
   }
+  const def = findModel(shot.modelKey);
+  if (def?.aspectParam && schema.fields.some((f) => f.name === def.aspectParam!.name)) {
+    const v = def.aspectParam.values[project.aspect];
+    if (v) out[def.aspectParam.name] = v;
+  }
   const ar = schema.fields.find((f) => f.name === "aspect_ratio");
   const match = matchAspect(ar, project.aspect);
   // with a start frame, models crop to it - let them infer unless the user chose
@@ -104,9 +109,9 @@ export function buildInput(schema: ModelSchema, project: Project, shot: Shot): B
       continue;
     }
     if (f.kind === "video" || f.kind === "unknown") {
-      const v = shot.params[f.name];
+      const v = shot.params[f.name] ?? auto[f.name];
       if (v !== undefined && v !== "") input[f.name] = v;
-      else if (f.required && f.default === undefined) errors.push(`Set "${f.label}" (in More settings).`);
+      else if (f.required && f.default === undefined) errors.push(`This model needs "${f.label}", which Shotflow can't set yet. Pick another model.`);
       continue;
     }
     const v = shot.params[f.name] ?? auto[f.name];

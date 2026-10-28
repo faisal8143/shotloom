@@ -95,7 +95,10 @@ export const api = {
   submit: (endpoint: string, input: Record<string, unknown>) =>
     call<SubmitResult>("/api/fal/submit", { endpoint, input }),
   status: (statusUrl: string) => call<StatusResult>("/api/fal/status", { statusUrl }),
-  result: (responseUrl: string) => call<{ videoUrl: string; seed?: number }>("/api/fal/result", { responseUrl }),
+  result: (responseUrl: string) => call<{ videoUrl?: string; imageUrl?: string; seed?: number }>("/api/fal/result", { responseUrl }),
+  /** rewrites a prompt into a detailed English video/image prompt (any language in) */
+  enhance: (prompt: string, kind: "video" | "image", withImage: boolean) =>
+    call<{ prompt: string }>("/api/enhance", { prompt, kind, withImage }),
   cancel: (responseUrl: string) => call<{ ok: boolean }>("/api/fal/cancel", { responseUrl }),
 };
 

@@ -1,0 +1,81 @@
+{
+ "openapi": "3.0.4",
+ "info": {
+  "title": "fal-ai/flux/schnell",
+  "version": "1"
+ },
+ "components": {
+  "schemas": {
+   "SchnellInput": {
+    "type": "object",
+    "properties": {
+     "prompt": {
+      "type": "string"
+     },
+     "num_inference_steps": {
+      "type": "integer",
+      "default": 4
+     },
+     "image_size": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ImageSize"
+       },
+       {
+        "enum": [
+         "square_hd",
+         "square",
+         "portrait_4_3",
+         "portrait_16_9",
+         "landscape_4_3",
+         "landscape_16_9"
+        ],
+        "type": "string"
+       }
+      ],
+      "default": "landscape_4_3"
+     },
+     "seed": {
+      "type": "integer"
+     },
+     "num_images": {
+      "type": "integer",
+      "default": 1
+     }
+    },
+    "required": [
+     "prompt"
+    ]
+   },
+   "ImageSize": {
+    "type": "object",
+    "properties": {
+     "width": {
+      "type": "integer"
+     },
+     "height": {
+      "type": "integer"
+     }
+    }
+   }
+  }
+ },
+ "paths": {
+  "/fal-ai/flux/schnell": {
+   "post": {
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SchnellInput"
+       }
+      }
+     }
+    }
+   }
+  },
+  "/fal-ai/flux/schnell/requests/{request_id}": {
+   "get": {}
+  }
+ }
+}
