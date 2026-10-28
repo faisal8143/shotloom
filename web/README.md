@@ -41,7 +41,7 @@ Two things to know: the share link is public while the session runs (so stop the
 
 ## Features
 
-- **Flow-style layout**: sidebar, prompt search, a grid of every clip (hover to play), and a prompt box with **+** (start frame, end frame, ingredients, characters), a **model pill**, a **settings** popover (aspect ratio and 1–4 outputs per prompt) and **send**.
+- **Flow-style layout**: sidebar, prompt search, a grid of every clip (hover to play), and a prompt box with **+** (start frame, end frame, ingredients, characters), a **model pill**, a **settings** popover (aspect ratio, duration, resolution — HD 720p / FHD 1080p where the model offers it — and 1–4 outputs per prompt) and **send**.
 - **Viewer**: open any clip to watch it, *Add to scene*, *Extend* from its last frame, *Use this frame*, *Reuse prompt*, download or delete; arrow keys step through clips.
 - **Scenes**: plays your scene clip after clip, reorder or remove clips, **Export MP4** (joined in the browser with ffmpeg.wasm; mixed resolutions and missing audio are normalised). Extended clips join the scene right after the clip they continue.
 - **Characters**: save reference images once and drop them into any prompt.

@@ -4,6 +4,7 @@ import { loadSchema } from "@/lib/client-api";
 import { compressImage } from "@/lib/media";
 import { CUSTOM_KEY, MODELS, SPACE_KEY, findModel, providerOf } from "@/lib/models";
 import { buildInput, chooseEndpoint } from "@/lib/plan";
+import { durationField, durationLabel, durationOptions, quickParams, resolutionField, resolutionLabel } from "@/lib/quick-settings";
 import { endImageField, fallbackSchema, referenceImagesField, type ModelSchema } from "@/lib/schema";
 import type { Aspect, Character, Project, Shot } from "@/lib/types";
 import { Icon } from "./Icon";
@@ -79,7 +80,10 @@ export const Composer = forwardRef<
 
   // the settings panel is kept Flow-simple, so camera presets, look and per-model
   // overrides saved by older versions are not applied: models use their defaults
-  const plain = useMemo(() => ({ ...draft, camera: {}, params: {} }), [draft]);
+  const plain = useMemo(() => ({ ...draft, camera: {}, params: quickParams(schema, draft.params) }), [draft, schema]);
+  const durField = durationField(schema);
+  const resField = resolutionField(schema);
+  const setParam = (name: string, v: unknown) => onChange({ params: { ...draft.params, [name]: v } });
   const built = useMemo(() => (schema ? buildInput(schema, { ...project, look: "" }, plain) : undefined), [schema, project, plain]);
 
   const supportsEnd = schema ? Boolean(endImageField(schema)) : false;
@@ -306,8 +310,14 @@ export const Composer = forwardRef<
         </Popover>
 
         <span className="composer__meta">
-          {project.aspect}
-          {count > 1 ? ` · ×${count}` : ""}
+          {[
+            project.aspect,
+            durField && (plain.params[durField.name] ?? durField.default) !== undefined ? durationLabel(plain.params[durField.name] ?? durField.default) : "",
+            resField && (plain.params[resField.name] ?? resField.default) !== undefined ? resolutionLabel(plain.params[resField.name] ?? resField.default).split(" ")[0] : "",
+            count > 1 ? `×${count}` : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
 
         <span className="spacer" />
@@ -347,6 +357,34 @@ export const Composer = forwardRef<
                 ))}
               </div>
             </div>
+            {durField ? (
+              <div className="tune__row">
+                <span className="field__label">Duration</span>
+                <Choice
+                  options={durationOptions(durField)}
+                  value={plain.params[durField.name] ?? durField.default}
+                  label={durationLabel}
+                  onPick={(v) => setParam(durField.name, v)}
+                />
+              </div>
+            ) : null}
+            {resField ? (
+              <div className="tune__row">
+                <span className="field__label">Resolution</span>
+                <Choice
+                  options={resField.options ?? []}
+                  value={plain.params[resField.name] ?? resField.default}
+                  label={resolutionLabel}
+                  onPick={(v) => setParam(resField.name, v)}
+                />
+              </div>
+            ) : null}
+            {schema && (!durField || !resField) ? (
+              <p className="dim small">
+                {!durField && !resField ? "This model has a fixed length and resolution." : !durField ? "This model has a fixed length." : "This model has a fixed resolution."}
+              </p>
+            ) : null}
+
             <div className="tune__row">
               <span className="field__label">Outputs per prompt</span>
               <div className="seg">
@@ -404,6 +442,48 @@ export const Composer = forwardRef<
     </div>
   );
 });
+
+/** Segmented buttons for a few choices, a dropdown for many. */
+function Choice({
+  options,
+  value,
+  label,
+  onPick,
+}: {
+  options: (string | number)[];
+  value: unknown;
+  label: (v: unknown) => string;
+  onPick: (v: string | number) => void;
+}) {
+  const current = value === undefined ? undefined : String(value);
+  if (options.length <= 5) {
+    return (
+      <div className="seg">
+        {options.map((o) => (
+          <button key={String(o)} className={"seg__btn" + (current === String(o) ? " is-on" : "")} onClick={() => onPick(o)}>
+            {label(o)}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <select
+      value={current ?? ""}
+      onChange={(e) => {
+        const o = options.find((x) => String(x) === e.target.value);
+        if (o !== undefined) onPick(o);
+      }}
+    >
+      {current === undefined ? <option value="">Model default</option> : null}
+      {options.map((o) => (
+        <option key={String(o)} value={String(o)}>
+          {label(o)}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function ModelRow({ name, maker, price, active, onPick }: { name: string; maker: string; price?: string; active: boolean; onPick: () => void }) {
   return (
